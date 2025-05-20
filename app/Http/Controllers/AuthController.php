@@ -14,7 +14,7 @@ class AuthController extends Controller
     public function register(Request $request) {
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|min:3|max:100',
-            'role' => 'required|string|in:admin,user',
+            //'role' => 'required|string|in:admin,user',
             'email' => 'required|email|unique:users,email',
             'password' => 'required|string|min:10|confirmed', // Indica que se vuelva a escribir el password
         ]);
@@ -27,7 +27,8 @@ class AuthController extends Controller
 
         $user = User::create([
             'name' => $request->get('name'),
-            'role' => $request->get('role'),
+            // 'role' => $request->get('role'),
+            'role' => 'user', // Asignar rol por defecto
             'email' => $request->get('email'),
             'password' => bcrypt($request->get('password')),
         ]);
@@ -58,6 +59,11 @@ class AuthController extends Controller
                     'error' => 'Credenciales inválidas'
                 ], 401);
             }
+
+            return response()->json([
+                'token' => $token
+            ], 200);
+
         } catch (JWTException $e) {
             return response()->json([
                 'error' => 'No se pudo crear el token', $e
@@ -66,7 +72,8 @@ class AuthController extends Controller
     }
 
     public function getUser() {
-        $user = Auth::user();
+        //$user = Auth::user();
+        $user = JWTAuth::parseToken()->authenticate();
         return response()->json([
             'user' => $user
         ], 200);

@@ -40,10 +40,10 @@ class ProductController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'nombre' => 'required|string|min:10|max:100',
-            'descripcion' => 'required|text|min:32|max:510',
+            'descripcion' => 'required|string|min:32|max:510',
             'precio' => 'required|numeric',
-            'url_imagen' => 'required|url',
-            'estado' => 'required|enum:1,2',
+            'url_imagen' => 'required|string',
+            'estado' => 'required|in:1,2',
             'peso'  => 'required|string|min:10|max:100',
             'fecha_creacion' => 'required|date',
         ]);
@@ -73,15 +73,16 @@ class ProductController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show(Product $id)
+    public function show($id)
     {
         $product = Product::find($id);
         if(!$product) {
                 return response()->json([
-                'message' => 'Product not found'],
-                404
+                'message' => 'Product not found'
+            ], 404
             );
         }
+        return response()->json($product, 200);
     }
 
     /**
@@ -95,7 +96,7 @@ class ProductController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, Product $id)
+    public function update(Request $request, $id)
     {
         $product = Product::find($id);
         if(!$product) {
@@ -107,10 +108,10 @@ class ProductController extends Controller
 
         $validator = Validator::make($request->all(), [
             'nombre' => 'sometimes|string|min:10|max:100',
-            'descripcion' => 'sometimes|text|min:32|max:510',
+            'descripcion' => 'sometimes|string|min:32|max:510',
             'precio' => 'sometimes|numeric',
-            'url_imagen' => 'sometimes|url',
-            'estado' => 'sometimes|enum:1,2',
+            'url_imagen' => 'sometimes|string',
+            'estado' => 'sometimes|in:1,2',
             'peso'  => 'sometimes|string|min:10|max:100',
             'fecha_creacion' => 'sometimes|date',
         ]);
@@ -153,7 +154,7 @@ class ProductController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(Product $id)
+    public function destroy($id)
     {
         $product = Product::find($id);
         if(!$product) {
@@ -164,8 +165,8 @@ class ProductController extends Controller
         }
         $product->delete();
         return response()->json([
-            'message' => 'Producto eliminado correctamente'],
-            200
+            'message' => 'Producto eliminado correctamente'
+        ], 200
         );
     }
 }

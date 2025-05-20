@@ -16,7 +16,7 @@ return new class extends Migration
             $table->string('nombre', 100);
             $table->text('descripcion');
             $table->decimal('precio', 8, 2);
-            $table->url('url_imagen')->nullable();
+            $table->string('url_imagen',255)->nullable();
             $table->enum('estado', ['disponible', 'no_disponible'])->default('disponible');
             $table->string('peso', 32)->nullable();
             $table->date('fecha_creacion');
