@@ -13,6 +13,8 @@ class User extends Authenticatable implements JWTSubject
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable;
 
+    protected $table = 'users';
+    protected $primaryKey = 'id_usuario';
 
     /**
      * The attributes that are mass assignable.
@@ -20,10 +22,13 @@ class User extends Authenticatable implements JWTSubject
      * @var list<string>
      */
     protected $fillable = [
-        'name',
-        'role',
-        'email',
-        'password',
+        'nombre',
+		'apellidos',
+		'email',
+		'password',
+		'telefono',
+		'fecha_creacion',
+		'roles_id_rol'
     ];
 
     /**
@@ -48,6 +53,45 @@ class User extends Authenticatable implements JWTSubject
             'password' => 'hashed',
         ];
     }
+
+
+    //* Métodos para relacionar con otros modelos
+    public function role()
+	{
+		return $this->belongsTo(Rol::class, 'roles_id_rol');
+	}
+
+	public function carritos()
+	{
+		return $this->hasMany(Carrito::class, 'usuarios_id_usuario');
+	}
+
+	public function comentarios()
+	{
+		return $this->hasMany(Comentario::class, 'usuarios_id_usuario');
+	}
+
+	public function direcciones()
+	{
+		return $this->hasMany(Direccion::class, 'usuarios_id_usuario');
+	}
+
+	public function notificaciones()
+	{
+		return $this->hasMany(Notificacion::class, 'usuarios_id_usuario');
+	}
+
+	public function pedidos()
+	{
+		return $this->hasMany(Pedido::class, 'usuarios_id_usuario');
+	}
+
+	public function reportes()
+	{
+		return $this->hasMany(Reporte::class, 'usuarios_id_usuario');
+	}
+
+    //* Métodos para JWT	
 
      /**
      * Get the identifier that will be stored in the subject claim of the JWT.

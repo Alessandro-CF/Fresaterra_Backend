@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
-use App\Models\Product;
+use App\Models\Producto;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
@@ -14,7 +14,7 @@ class ProductController extends Controller
      */
     public function index()
     {
-        $products = Product::all();
+        $products = Producto::all();
 
         if($products->isEmpty()) {
             return response()->json([
@@ -56,7 +56,7 @@ class ProductController extends Controller
             );
         }
 
-        Product::create([
+        Producto::create([
             'nombre' => $request->get('nombre'),
             'descripcion' => $request->get('descripcion'),
             'precio' => $request->get('precio'),
@@ -76,7 +76,7 @@ class ProductController extends Controller
      */
     public function show($id)
     {
-        $product = Product::find($id);
+        $product = Producto::find($id);
         if(!$product) {
                 return response()->json([
                 'message' => 'Product not found'
@@ -89,7 +89,7 @@ class ProductController extends Controller
     /**
      * Show the form for editing the specified resource.
      */
-    public function edit(Product $product)
+    public function edit(Producto $product)
     {
         //
     }
@@ -99,7 +99,7 @@ class ProductController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $product = Product::find($id);
+        $product = Producto::find($id);
         if(!$product) {
                 return response()->json([
                 'message' => 'Producto no encontrado'],
@@ -157,7 +157,7 @@ class ProductController extends Controller
      */
     public function destroy($id)
     {
-        $product = Product::find($id);
+        $product = Producto::find($id);
         if(!$product) {
                 return response()->json([
                 'message' => 'Producto no encontrado'],
