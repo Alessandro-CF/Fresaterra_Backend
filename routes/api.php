@@ -54,6 +54,14 @@ Route::prefix('v1')->group(function () {
         Route::post('/send', [NotificacionController::class, 'store']);
         Route::get('/{notificacion}', [NotificacionController::class, 'show']);
         Route::put('/{notificacion}', [NotificacionController::class, 'update']);
+        
+        // Rutas específicas para notificaciones tipo campanita
+        Route::get('/user/all', [NotificacionController::class, 'getUserNotifications']);
+        Route::get('/user/unread', [NotificacionController::class, 'getUnreadNotifications']);
+        Route::post('/notify-with-message', [NotificacionController::class, 'notificarConMensaje']);
+        Route::patch('/{id}/read', [NotificacionController::class, 'markAsRead']);
+        Route::patch('/read-all', [NotificacionController::class, 'markAllAsRead']);
+        Route::delete('/{notificacion}', [NotificacionController::class, 'destroy']);
     });
     
     // Rutas para comentarios
@@ -63,7 +71,6 @@ Route::prefix('v1')->group(function () {
         Route::get('/users', [ComentarioController::class, 'usuarios']);
         Route::get('/{id}', [ComentarioController::class, 'show']);
         Route::post('/{id}', [ComentarioController::class, 'update']); // Permitir POST para actualizar
-        Route::put('/{id}', [ComentarioController::class, 'update']);
         Route::patch('/{id}', [ComentarioController::class, 'update']); // Añadir soporte para PATCH
         Route::delete('/{id}', [ComentarioController::class, 'destroy']);
     });
