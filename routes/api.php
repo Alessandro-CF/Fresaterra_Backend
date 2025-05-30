@@ -54,6 +54,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/send', [NotificacionController::class, 'store']);
         Route::get('/{notificacion}', [NotificacionController::class, 'show']);
         Route::put('/{notificacion}', [NotificacionController::class, 'update']);
+        Route::patch('/{notificacion}', [NotificacionController::class, 'update']); // Añadir soporte para PATCH
         
         // Rutas específicas para notificaciones tipo campanita
         Route::get('/user/all', [NotificacionController::class, 'getUserNotifications']);
