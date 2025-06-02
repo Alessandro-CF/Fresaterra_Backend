@@ -50,7 +50,8 @@ class MercadoPagoController extends Controller
         }
 
         // Obtener la URL del frontend desde las variables de entorno
-        $frontendUrl = env('FRONTEND_URL', 'http://localhost:3000'); // Valor por defecto
+        $frontendUrl = env('FRONTEND_URL'); // Valor por defecto
+        $frontendUrl = rtrim($frontendUrl, '/'); // Eliminar la barra inclinada final si existe
         Log::debug('Frontend URL para back_urls: ' . $frontendUrl); // <-- NUEVO LOG AÑADIDO
 
         $backUrls = [
@@ -62,7 +63,7 @@ class MercadoPagoController extends Controller
         $preferenceRequest = [
             'items'       => $itemsForMercadoPago,
             'back_urls'   => $backUrls,
-            //'auto_return' => 'approved', // Re-habilitado
+            'auto_return' => 'approved', // Re-habilitado
         ];
         try {
             $preference = $client->create($preferenceRequest);

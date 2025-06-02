@@ -39,4 +39,7 @@ Route::prefix('v1')->group(function () {
 
     // Ruta para crear una preferencia de pago con Mercado Pago
     Route::post('/create-preference', [MercadoPagoController::class, 'createPreference']);
+
+    Route::post('/mercadopago/notifications', [MercadoPagoController::class, 'handleWebhook'])
+    ->name('mercadopago.notifications'); // El nombre es importante para la función route()
 });
