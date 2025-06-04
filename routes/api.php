@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\ProductController;
 use App\Http\Controllers\Api\V1\NotificacionController;
 use App\Http\Controllers\Api\V1\ComentarioController;
+use App\Http\Controllers\Api\V1\MensajeController;
 
 use App\Http\Middleware\IsUserAuth;
 use App\Http\Middleware\IsAdmin;
@@ -26,8 +27,8 @@ Route::prefix('v1')->group(function () {
     // Servicios públicos para probar API
     Route::get('comments', [ComentarioController::class, 'index']);
     Route::get('comments/{id}', [ComentarioController::class, 'show']);
-    Route::get('notifications', [NotificacionController::class, 'index']);
-    Route::get('notifications/{notificacion}', [NotificacionController::class, 'show']);
+    // Rutas públicas para verificar usuarios registrados
+    Route::get('users/registered', [NotificacionController::class, 'getRegisteredUsers']);
 
     // * PRIVATE ROUTES
     // Para los usuarios autenticados
@@ -48,21 +49,55 @@ Route::prefix('v1')->group(function () {
         });
     });
     
-    // Rutas para notificaciones
-    Route::prefix('notifications')->group(function () {
-        Route::get('/', [NotificacionController::class, 'index']);
-        Route::post('/send', [NotificacionController::class, 'store']);
-        Route::get('/{notificacion}', [NotificacionController::class, 'show']);
-        Route::put('/{notificacion}', [NotificacionController::class, 'update']);
-        Route::patch('/{notificacion}', [NotificacionController::class, 'update']); // Añadir soporte para PATCH
+    // Rutas para notificaciones de usuario
+    Route::middleware([IsUserAuth::class])->group(function () {
+        Route::prefix('me/notificaciones')->group(function () {
+            Route::get('/', [NotificacionController::class, 'getUserNotifications']);
+            Route::patch('/{id_notificacion}', [NotificacionController::class, 'updateUserNotificationStatus']);
+            Route::delete('/{id_notificacion}', [NotificacionController::class, 'deleteUserNotification']);
+        });
+    });
+
+    // Rutas para notificaciones de administrador
+    Route::middleware([IsAdmin::class])->group(function () {
+        Route::prefix('admin/notificaciones')->group(function () {
+            Route::post('/', [NotificacionController::class, 'sendAdminNotification']);
+            Route::get('/', [NotificacionController::class, 'getAllAdminNotifications']);
+            Route::delete('/{id_notificacion}', [NotificacionController::class, 'deleteAdminNotification']);
+        });
+    });
+
+    // Rutas para confirmaciones de registro por email (solo administradores)
+    Route::middleware([IsAdmin::class])->group(function () {
+        Route::prefix('admin/emails')->group(function () {
+            // Envío de emails de confirmación de registro
+            Route::post('test', [NotificacionController::class, 'sendTestEmail']);
+            Route::post('registration-confirmation', [NotificacionController::class, 'sendRegistrationConfirmation']);
+            Route::post('registration-confirmation/multiple', [NotificacionController::class, 'sendMultipleRegistrationConfirmations']);
+            Route::post('registration-confirmation/all', [NotificacionController::class, 'sendConfirmationToAllUsers']);
+        });
         
-        // Rutas específicas para notificaciones tipo campanita
-        Route::get('/user/all', [NotificacionController::class, 'getUserNotifications']);
-        Route::get('/user/unread', [NotificacionController::class, 'getUnreadNotifications']);
-        Route::post('/notify-with-message', [NotificacionController::class, 'notificarConMensaje']);
-        Route::patch('/{id}/read', [NotificacionController::class, 'markAsRead']);
-        Route::patch('/read-all', [NotificacionController::class, 'markAllAsRead']);
-        Route::delete('/{notificacion}', [NotificacionController::class, 'destroy']);
+        Route::prefix('admin/users')->group(function () {
+            // Obtener lista de usuarios registrados
+            Route::get('registered', [NotificacionController::class, 'getRegisteredUsers']);
+        });
+    });
+    
+    // Rutas para mensajes
+    Route::prefix('messages')->group(function () {
+        // Rutas públicas (solo lectura)
+        Route::get('/', [MensajeController::class, 'index']);
+        Route::get('/{id}', [MensajeController::class, 'show']);
+        Route::get('/type/{tipo}', [MensajeController::class, 'getByType']);
+        Route::get('/types/available', [MensajeController::class, 'getTypes']);
+        
+        // Rutas para administradores (CRUD completo)
+        Route::middleware([IsAdmin::class])->group(function () {
+            Route::post('/', [MensajeController::class, 'store']);
+            Route::put('/{id}', [MensajeController::class, 'update']);
+            Route::patch('/{id}', [MensajeController::class, 'update']);
+            Route::delete('/{id}', [MensajeController::class, 'destroy']);
+        });
     });
     
     // Rutas para comentarios

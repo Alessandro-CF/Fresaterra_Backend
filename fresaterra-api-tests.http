@@ -1,0 +1,225 @@
+### 🌱 FRESATERRA - API de Confirmaciones por Email
+### Configuración actual:
+### - Email servidor: fresaterra@gmail.com
+### - SMTP: smtp.gmail.com:587
+### - Backend: Laravel API REST
+### - Base de datos: db_fresaterra
+
+@baseUrl = http://localhost:8000/api/v1
+@adminEmail = fresaterra@gmail.com
+
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### 🔍 1. VERIFICAR CONECTIVIDAD
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### Verificar que la API está funcionando
+GET {{baseUrl}}/users/registered HTTP/1.1
+Accept: application/json
+
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### 📧 2. EMAIL DE PRUEBA
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### Enviar email de prueba a fresaterra@gmail.com
+### Verifica configuración SMTP y conectividad con Gmail
+POST {{baseUrl}}/email-confirmations/test-email HTTP/1.1
+Content-Type: application/json
+Accept: application/json
+
+{}
+
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### 👥 3. GESTIÓN DE USUARIOS
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### Obtener lista completa de usuarios registrados
+GET {{baseUrl}}/email-confirmations/users/list HTTP/1.1
+Accept: application/json
+
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### 📤 4. CONFIRMACIONES INDIVIDUALES
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### Enviar confirmación a usuario ID 1
+### Cambiar el user_id por un ID real de la base de datos
+POST {{baseUrl}}/email-confirmations/registration/user HTTP/1.1
+Content-Type: application/json
+Accept: application/json
+
+{
+    "user_id": 1
+}
+
+###
+
+### Enviar confirmación a usuario ID 2
+POST {{baseUrl}}/email-confirmations/registration/user HTTP/1.1
+Content-Type: application/json
+Accept: application/json
+
+{
+    "user_id": 2
+}
+
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### 📤📤 5. CONFIRMACIONES MÚLTIPLES
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### Enviar confirmaciones a múltiples usuarios
+### Cambiar los IDs por IDs reales de la base de datos
+POST {{baseUrl}}/email-confirmations/registration/multiple HTTP/1.1
+Content-Type: application/json
+Accept: application/json
+
+{
+    "user_ids": [1, 2, 3]
+}
+
+###
+
+### Ejemplo con más usuarios
+POST {{baseUrl}}/email-confirmations/registration/multiple HTTP/1.1
+Content-Type: application/json
+Accept: application/json
+
+{
+    "user_ids": [1, 2, 3, 4, 5]
+}
+
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### 🚨 6. ENVÍO MASIVO (¡CUIDADO!)
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### ⚠️ ADVERTENCIA: Envía emails a TODOS los usuarios activos
+### Usar solo en entornos de desarrollo o con mucho cuidado
+POST {{baseUrl}}/email-confirmations/registration/all-users HTTP/1.1
+Content-Type: application/json
+Accept: application/json
+
+{}
+
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### 🔐 7. AUTENTICACIÓN (OPCIONAL)
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### Login como administrador (si es necesario)
+POST {{baseUrl}}/login HTTP/1.1
+Content-Type: application/json
+Accept: application/json
+
+{
+    "email": "{{adminEmail}}",
+    "password": "fresaterr@12345"
+}
+
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### 👤 8. REGISTRO DE USUARIOS (PARA PRUEBAS)
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### Registrar nuevo usuario para pruebas
+POST {{baseUrl}}/register HTTP/1.1
+Content-Type: application/json
+Accept: application/json
+
+{
+    "nombre": "Usuario Prueba Fresaterra",
+    "email": "prueba@fresaterra.com",
+    "password": "password123",
+    "password_confirmation": "password123"
+}
+
+###
+
+### Registrar otro usuario para pruebas múltiples
+POST {{baseUrl}}/register HTTP/1.1
+Content-Type: application/json
+Accept: application/json
+
+{
+    "nombre": "Ana García",
+    "email": "ana.garcia@fresaterra.com",
+    "password": "password123",
+    "password_confirmation": "password123"
+}
+
+###
+
+### Registrar usuario sin nombre (usa email como nombre)
+POST {{baseUrl}}/register HTTP/1.1
+Content-Type: application/json
+Accept: application/json
+
+{
+    "email": "carlos.lopez@fresaterra.com",
+    "password": "password123",
+    "password_confirmation": "password123"
+}
+
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### 📋 GUÍA DE RESPUESTAS ESPERADAS
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### ✅ Respuesta exitosa típica:
+# {
+#   "success": true,
+#   "message": "Correo de confirmación de registro enviado exitosamente",
+#   "user_email": "usuario@example.com",
+#   "user_name": "Usuario Ejemplo"
+# }
+
+### ❌ Respuesta de error típica:
+# {
+#   "success": false,
+#   "message": "Error al enviar correo de confirmación",
+#   "error": "Detalles del error"
+# }
+
+### 📊 Respuesta de envío múltiple:
+# {
+#   "success": true,
+#   "message": "Proceso completado. 3 correos enviados, 1 errores.",
+#   "summary": {
+#     "total_usuarios": 4,
+#     "enviados_exitosamente": 3,
+#     "errores": 1
+#   },
+#   "details": [...]
+# }
+
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### 🎯 CONTENIDO DEL EMAIL DE CONFIRMACIÓN
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### Asunto: ¡Bienvenido a Fresaterra! - Confirmación de Registro
+### De: Fresaterra <fresaterra@gmail.com>
+### 
+### Contenido incluye:
+### - Saludo personalizado con nombre del usuario
+### - Mensaje de bienvenida de Fresaterra
+### - Fecha de registro
+### - Email del usuario
+### - Enlace al frontend para hacer login
+### - Mensaje de productos frescos y naturales
+### - Firma del equipo de Fresaterra
+
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### 🔧 CONFIGURACIÓN TÉCNICA
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### Variables de entorno requeridas (.env):
+# MAIL_MAILER=smtp
+# MAIL_HOST=smtp.gmail.com
+# MAIL_PORT=587
+# MAIL_USERNAME=fresaterra@gmail.com
+# MAIL_PASSWORD=fresaterr@12345
+# MAIL_ENCRYPTION=tls
+# MAIL_FROM_ADDRESS=fresaterra@gmail.com
+# MAIL_FROM_NAME="Fresaterra"
+
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### 🌐 URLS DE ACCESO
+### ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### Dashboard web: http://localhost:8000/fresaterra-email-dashboard.html
+### Servicio JavaScript: http://localhost:8000/js/fresaterra-email-service.js
+### API Base: http://localhost:8000/api/v1
