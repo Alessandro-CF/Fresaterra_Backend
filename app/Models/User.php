@@ -27,6 +27,7 @@ class User extends Authenticatable implements JWTSubject
 		'email',
 		'password',
 		'telefono',
+		'estado',
 		'fecha_creacion',
 		'roles_id_rol'
     ];
@@ -51,6 +52,7 @@ class User extends Authenticatable implements JWTSubject
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'estado' => 'boolean',
         ];
     }
 
@@ -90,6 +92,56 @@ class User extends Authenticatable implements JWTSubject
 	{
 		return $this->hasMany(Reporte::class, 'usuarios_id_usuario');
 	}
+
+    //* Métodos para manejo de estado de cuenta
+    
+    /**
+     * Verificar si el usuario está activo
+     */
+    public function isActive()
+    {
+        return $this->estado === true;
+    }
+
+    /**
+     * Verificar si el usuario está desactivado
+     */
+    public function isDeactivated()
+    {
+        return $this->estado === false;
+    }
+
+    /**
+     * Desactivar la cuenta del usuario
+     */
+    public function deactivate()
+    {
+        $this->update(['estado' => false]);
+    }
+
+    /**
+     * Activar la cuenta del usuario
+     */
+    public function activate()
+    {
+        $this->update(['estado' => true]);
+    }
+
+    /**
+     * Scope para obtener solo usuarios activos
+     */
+    public function scopeActive($query)
+    {
+        return $query->where('estado', true);
+    }
+
+    /**
+     * Scope para obtener solo usuarios desactivados
+     */
+    public function scopeDeactivated($query)
+    {
+        return $query->where('estado', false);
+    }
 
     //* Métodos para JWT	
 

@@ -1,10 +1,10 @@
 <?php
 
-use App\Http\Middleware\IsAdmin;
-use App\Http\Middleware\IsUserAuth;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use App\Http\Middleware\IsUserAuth;
+use App\Http\Middleware\IsAdmin;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -14,9 +14,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        IsUserAuth::class;
-        IsAdmin::class;
-        
+        // Registrar aliases para los middlewares
+        $middleware->alias([
+            'jwt.auth' => IsUserAuth::class,
+            'admin' => IsAdmin::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

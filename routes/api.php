@@ -1,45 +1,86 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-
 use App\Http\Controllers\Api\V1\MercadoPagoController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\ProductController;
-
-use App\Http\Middleware\IsUserAuth;
-use App\Http\Middleware\IsAdmin;
-
-/**//* Rutas con el prefijo /api/v1 */
+use App\Http\Controllers\Api\V1\DireccionesController;
 
 Route::prefix('v1')->group(function () {
-    //* PUBLIC ROUTES
-    Route::post('register', [AuthController::class, 'register']);
-    Route::post('login', [AuthController::class, 'login']);
-
+    
+    // * RUTAS PÚBLICAS (Sin autenticación)
+    
+    // Autenticación
+    Route::controller(AuthController::class)->group(function () {
+        Route::post('register', 'register');
+        Route::post('login', 'login');
+        Route::post('password/email', 'sendPasswordResetEmail');
+    });
+    
+    // Productos públicos
     Route::get('products', [ProductController::class, 'index']);
 
-    // * PRIVATE ROUTES
-    // Para los usuarios autenticados
-    Route::middleware([IsUserAuth::class])->group(function () {
+    // * RUTAS PRIVADAS (Requieren autenticación JWT)
+    Route::middleware('jwt.auth')->group(function () {
+        
+        // Gestión de cuenta del usuario
         Route::controller(AuthController::class)->group(function () {
-            Route::post('logout', 'logout');
-            Route::get('me', 'getUser');
+            Route::post('logout', 'logout');            // Cerrar sesión
+            Route::get('me', 'me');                     // Obtener datos del usuario
+            Route::put('profile', 'updateProfile');     // Actualizar perfil completo
+            Route::patch('profile', 'updateProfile');   // Actualizar campos específicos
+            Route::patch('me/password', 'changePassword'); // Cambiar contraseña
+            Route::patch('me/deactivate', 'deactivateAccount'); // Desactivar cuenta
         });
+
+         // Gestión de direcciones del usuario
+        Route::controller(DireccionesController::class)->group(function () {
+            Route::get('/me/addresses', 'index');                          // Listar direcciones
+            Route::post('addresses', 'store');                         // Crear dirección
+            Route::get('addresses/default', 'getDefault');              // Obtener predeterminada
+            Route::get('addresses/{id}', 'show');                      // Obtener dirección específica
+            Route::put('addresses/{id}', 'update');                    // Actualizar dirección
+            Route::patch('addresses/{id}', 'update');                  // Actualizar dirección parcial
+            Route::delete('addresses/{id}', 'destroy');                // Eliminar dirección
+            Route::patch('addresses/{id}/set-default', 'setAsDefault'); // Establecer como predeterminada
+        });
+        
+        // Pagos (requiere autenticación)
+        Route::post('create-preference', [MercadoPagoController::class, 'createPreference']);
     });
 
-    // Para los administradores
-    Route::middleware([IsAdmin::class])->group(function () {
+    // * RUTAS DE ADMINISTRADOR (JWT + Admin)
+    
+    Route::middleware(['jwt.auth', 'admin'])->group(function () {
+        
+        // Gestión de usuarios (admin)
+        Route::controller(AuthController::class)->prefix('admin')->group(function () {
+            Route::get('dashboard', 'adminDashboard');                    // Dashboard con estadísticas
+            Route::get('users', 'getAllUsers');                           // Listar todos los usuarios con filtros
+            Route::get('users/deactivated', 'getDeactivatedUsers');       // Listar usuarios desactivados
+            Route::get('users/search', 'searchUsers');                    // Búsqueda avanzada de usuarios
+            Route::get('users/statistics', 'getUserStatistics');          // Estadísticas detalladas
+            Route::get('users/{id}', 'getUserDetails');                   // Obtener detalles de usuario
+            Route::patch('users/{id}/reactivate', 'reactivateUser');      // Reactivar usuario
+            Route::patch('users/{id}/deactivate', 'adminDeactivateUser'); // Desactivar usuario como admin
+        });
+
+        // Gestión de productos (admin)
         Route::controller(ProductController::class)->group(function () {
             Route::post('products', 'store');
-            Route::get('/products/{id}', 'show');
-            Route::patch('/products/{id}', 'update');
-            Route::delete('/products/{id}', 'destroy');
+            Route::get('products/{id}', 'show');
+            Route::patch('products/{id}', 'update');
+            Route::delete('products/{id}', 'destroy');
+        });
+
+         // Gestión de direcciones (admin)
+        Route::controller(DireccionesController::class)->group(function () {
+            Route::get('admin/users/{userId}/addresses', 'getUserAddresses');     // Direcciones de un usuario
+            Route::get('admin/addresses/statistics', 'getAddressStatistics');     // Estadísticas de direcciones
         });
     });
 
-    // Ruta para crear una preferencia de pago con Mercado Pago
-    Route::post('/create-preference', [MercadoPagoController::class, 'createPreference']);
-
-    Route::post('/mercadopago/notifications', [MercadoPagoController::class, 'handleWebhook'])
-    ->name('mercadopago.notifications'); // El nombre es importante para la función route()
+    // * WEBHOOKS (Sin autenticación)  
+    Route::post('mercadopago/notifications', [MercadoPagoController::class, 'handleWebhook'])
+        ->name('mercadopago.notifications');
 });
