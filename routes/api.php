@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 
+use App\Http\Controllers\Api\V1\MercadoPagoController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\ProductController;
 
@@ -35,4 +36,10 @@ Route::prefix('v1')->group(function () {
             Route::delete('/products/{id}', 'destroy');
         });
     });
+
+    // Ruta para crear una preferencia de pago con Mercado Pago
+    Route::post('/create-preference', [MercadoPagoController::class, 'createPreference']);
+
+    Route::post('/mercadopago/notifications', [MercadoPagoController::class, 'handleWebhook'])
+    ->name('mercadopago.notifications'); // El nombre es importante para la función route()
 });

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\Rol;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
@@ -15,7 +16,9 @@ class AuthController extends Controller
     public function register(Request $request) {
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|min:3|max:100',
-            //'role' => 'required|string|in:admin,user',
+            'apellidos' => 'required|string|min:3|max:250',
+            'telefono' => 'required|string|min:7|max:15', // AÑADE VALIDACIÓN PARA TELEFONO (ajusta las reglas según necesites)
+            'role' => 'required|string|in:admin,client',
             'email' => 'required|email|unique:users,email',
             'password' => 'required|string|min:10|confirmed', // Indica que se vuelva a escribir el password
         ]);
@@ -26,12 +29,26 @@ class AuthController extends Controller
             ], 422);
         }
 
+        // Obtener el nombre del rol desde la solicitud
+        $roleNameFromRequest = $request->input('role');
+        // Buscar el modelo Rol basado en el nombre
+        $roleModel = Rol::where('nombre', $roleNameFromRequest)->first();
+
+        // Si el rol no se encuentra en la base de datos
+        if (!$roleModel) {
+            // Esto no debería ocurrir si la validación 'in:admin,client' funciona
+            // y tu tabla 'roles' tiene estos nombres.
+            return response()->json(['error' => 'El rol especificado no es válido o no existe en la base de datos.'], 400);
+        }
+
         $user = User::create([
-            'name' => $request->get('name'),
-            // 'role' => $request->get('role'),
-            'role' => 'user', // Asignar rol por defecto
+            'nombre' => $request->get('name'),
+            'apellidos' => $request->get('apellidos'),
+            'telefono' => $request->get('telefono'),
+            //'role' => 2, // Asignar rol por defecto
             'email' => $request->get('email'),
             'password' => bcrypt($request->get('password')),
+            'roles_id_rol' => $roleModel->id_rol, // CORRECCIÓN AQUÍ: Usar el ID del rol y la columna correcta
         ]);
 
         $token = JWTAuth::fromUser($user);
