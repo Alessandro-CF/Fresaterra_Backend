@@ -5,6 +5,10 @@ namespace App\Http\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Tymon\JWTAuth\Facades\JWTAuth;
+use Tymon\JWTAuth\Exceptions\JWTException;
+use Tymon\JWTAuth\Exceptions\TokenExpiredException;
+use Tymon\JWTAuth\Exceptions\TokenInvalidException;
 
 class IsAdmin
 {
@@ -15,14 +19,36 @@ class IsAdmin
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $user = (auth('api')->user());
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+            
+            if (!$user) {
+                return response()->json([
+                    'error' => 'Usuario no encontrado'
+                ], 404);
+            }
 
-         if($user && $user->role === 'admin') {
-            return $next($request);
-        } else {
+            // Verificar si el usuario es administrador (rol_id = 1)
+            if ($user->roles_id_rol !== 1) {
+                return response()->json([
+                    'error' => 'Acceso denegado. Se requieren permisos de administrador'
+                ], 403);
+            }
+
+        } catch (TokenExpiredException $e) {
             return response()->json([
-                'error' => 'No eres administrador'
-            ], 403); // Indica que el acceso de el usuario no es permitido
+                'error' => 'Token expirado'
+            ], 401);
+        } catch (TokenInvalidException $e) {
+            return response()->json([
+                'error' => 'Token inválido'
+            ], 401);
+        } catch (JWTException $e) {
+            return response()->json([
+                'error' => 'Token inválido o ausente'
+            ], 401);
         }
+
+        return $next($request);
     }
 }
