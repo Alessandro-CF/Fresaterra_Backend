@@ -18,6 +18,7 @@ return new class extends Migration
             $table->string('distrito');
             $table->string('ciudad');
             $table->string('referencia')->nullable();
+            $table->string('predeterminada')->default('si'); // 'si' o 'no'
             $table->unsignedBigInteger('usuarios_id_usuario');
             $table->unsignedBigInteger('envios_id_envio');
             $table->foreign('usuarios_id_usuario')->references('id_usuario')->on('users');
