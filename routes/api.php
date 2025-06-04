@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\V1\MercadoPagoController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\ProductController;
+use App\Http\Controllers\Api\V1\AddressController;
 
 use App\Http\Middleware\IsUserAuth;
 use App\Http\Middleware\IsAdmin;
@@ -24,6 +25,14 @@ Route::prefix('v1')->group(function () {
         Route::controller(AuthController::class)->group(function () {
             Route::post('logout', 'logout');
             Route::get('me', 'getUser');
+        });
+
+        // Rutas para gestión de direcciones
+        Route::controller(AddressController::class)->group(function () {
+            Route::get('addresses', 'index');              // Obtener todas las direcciones del usuario
+            Route::post('addresses', 'store');             // Crear nueva dirección
+            Route::patch('addresses/{id}/set-default', 'setDefault'); // Establecer como predeterminada
+            Route::get('addresses/default', 'getDefault'); // Obtener dirección predeterminada
         });
     });
 

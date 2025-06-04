@@ -42,6 +42,7 @@ class Direccion extends Model
 		'distrito',
 		'ciudad',
 		'referencia',
+		'predeterminada',
 		'usuarios_id_usuario',
 		'envios_id_envio'
 	];

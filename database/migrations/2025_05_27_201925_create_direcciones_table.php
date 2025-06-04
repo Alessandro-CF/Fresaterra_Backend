@@ -18,8 +18,9 @@ return new class extends Migration
             $table->string('distrito');
             $table->string('ciudad');
             $table->string('referencia')->nullable();
+            $table->string('predeterminada')->default('No'); // Campo para marcar dirección predeterminada
             $table->unsignedBigInteger('usuarios_id_usuario');
-            $table->unsignedBigInteger('envios_id_envio');
+            $table->unsignedBigInteger('envios_id_envio')->nullable(); // Hacer nullable ya que no siempre tendrá un envío
             $table->foreign('usuarios_id_usuario')->references('id_usuario')->on('users');
             $table->foreign('envios_id_envio')->references('id_envio')->on('envios');
             $table->timestamps();
