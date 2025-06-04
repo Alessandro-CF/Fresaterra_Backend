@@ -21,7 +21,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property int $usuarios_id_usuario
  * @property int $envios_id_envio
  * 
- * @property Usuario $usuario
+ * @property User $usuario
  * @property Envio $envio
  *
  * @package App\Models
