@@ -44,8 +44,8 @@ class Direccion extends Model
 		'ciudad',
 		'referencia',
 		'predeterminada',
-		'usuarios_id_usuario',
-		'envios_id_envio'
+		'usuarios_id_usuario'
+		// Temporalmente removido 'envios_id_envio' hasta implementar sistema de envíos
 	];
 
 	// * MÉTODOS HELPER

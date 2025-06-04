@@ -91,7 +91,7 @@ class DireccionesController extends Controller
                 'referencia' => $request->referencia,
                 'predeterminada' => ($request->get('predeterminada', false) || $isFirstAddress) ? 'si' : 'no',
                 'usuarios_id_usuario' => $user->id_usuario,
-                'envios_id_envio' => 1 // Temporal, hasta que tengas el sistema de envíos
+                // envios_id_envio será null temporalmente hasta implementar la logica de envios
             ]);
 
             return response()->json([
