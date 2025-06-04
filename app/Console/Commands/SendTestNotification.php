@@ -3,7 +3,7 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
-use App\Services\NotificationService;
+use App\Http\Controllers\Api\V1\NotificacionController;
 use App\Models\User;
 
 class SendTestNotification extends Command
@@ -26,12 +26,12 @@ class SendTestNotification extends Command
      */
     protected $description = 'Enviar una notificación de prueba a un usuario específico';
 
-    protected $notificationService;
+    protected $notificacionController;
 
-    public function __construct(NotificationService $notificationService)
+    public function __construct(NotificacionController $notificacionController)
     {
         parent::__construct();
-        $this->notificationService = $notificationService;
+        $this->notificacionController = $notificacionController;
     }
 
     /**
