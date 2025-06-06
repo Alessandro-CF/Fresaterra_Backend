@@ -5,403 +5,17 @@ namespace App\Http\Controllers\Api\V1;
 use App\Models\User;
 use App\Models\Notificacion;
 use App\Models\Mensaje;
+use App\Notifications\EmailNotification;
+use App\Notifications\CampanitaNotification;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Notification;
-use Illuminate\Notifications\Messages\MailMessage;
 
 class NotificacionController extends Controller
 {
-    // =====================================
-    // MÉTODOS DE NOTIFICACIÓN INTERNA
-    // =====================================
-
-    /**
-     * Enviar notificación tipo campanita (solo in-app)
-     */
-    private function sendInAppNotification($userId, $data, $tipo = 'general')
-    {
-        try {
-            $user = User::find($userId);
-            if (!$user) {
-                throw new \Exception('Usuario no encontrado');
-            }
-
-            // Crear notificación en base de datos usando Laravel Notifications
-            $notificationData = $this->formatCampanitaNotification($data, $tipo, $user);
-            
-            // Crear la notificación directamente en la base de datos
-            $user->notifications()->create([
-                'id' => \Illuminate\Support\Str::uuid()->toString(),
-                'type' => 'App\\Notifications\\CampanitaNotification',
-                'data' => $notificationData,
-                'read_at' => null,
-                'created_at' => now(),
-                'updated_at' => now()
-            ]);
-
-            return [
-                'success' => true,
-                'message' => 'Notificación in-app enviada correctamente',
-                'type' => 'campanita'
-            ];
-        } catch (\Exception $e) {
-            Log::error('Error al enviar notificación in-app: ' . $e->getMessage());
-            return [
-                'success' => false,
-                'message' => 'Error al enviar notificación: ' . $e->getMessage()
-            ];
-        }
-    }
-
-    /**
-     * Enviar notificación por email
-     */
-    private function sendEmailNotification($userId, $data, $tipo = 'general', $asunto = null)
-    {
-        try {
-            $user = User::find($userId);
-            if (!$user) {
-                throw new \Exception('Usuario no encontrado');
-            }
-
-            // Enviar email usando Laravel Mail
-            $mailMessage = $this->buildEmailMessage($data, $tipo, $asunto, $user);
-            
-            // Enviar el email
-            $user->notify(new \Illuminate\Notifications\Messages\SimpleMessage($mailMessage));
-
-            // También crear registro en base de datos
-            $notificationData = $this->formatEmailNotification($data, $tipo, $asunto, $user);
-            $user->notifications()->create([
-                'id' => \Illuminate\Support\Str::uuid()->toString(),
-                'type' => 'App\\Notifications\\EmailNotification',
-                'data' => $notificationData,
-                'read_at' => null,
-                'created_at' => now(),
-                'updated_at' => now()
-            ]);
-
-            return [
-                'success' => true,
-                'message' => 'Notificación por email enviada correctamente',
-                'type' => 'email'
-            ];
-        } catch (\Exception $e) {
-            Log::error('Error al enviar notificación por email: ' . $e->getMessage());
-            return [
-                'success' => false,
-                'message' => 'Error al enviar notificación por email: ' . $e->getMessage()
-            ];
-        }
-    }
-
-    /**
-     * Enviar notificación completa (in-app + email)
-     */
-    private function sendCompleteNotification($userId, $data, $tipo = 'general', $asunto = null, $sendEmail = true)
-    {
-        $results = [];
-
-        // Enviar notificación in-app siempre
-        $inAppResult = $this->sendInAppNotification($userId, $data, $tipo);
-        $results['inApp'] = $inAppResult;
-
-        // Enviar email si se solicita
-        if ($sendEmail) {
-            $emailResult = $this->sendEmailNotification($userId, $data, $tipo, $asunto);
-            $results['email'] = $emailResult;
-        }
-
-        $allSuccess = $inAppResult['success'] && (!$sendEmail || $results['email']['success']);
-
-        return [
-            'success' => $allSuccess,
-            'message' => $allSuccess ? 'Notificaciones enviadas correctamente' : 'Algunas notificaciones fallaron',
-            'results' => $results
-        ];
-    }
-
-    /**
-     * Crear notificación usando mensaje existente
-     */
-    private function createNotificationFromMessage($userId, $mensajeId, $tipo = 'general', $sendEmail = false)
-    {
-        try {
-            $mensaje = Mensaje::find($mensajeId);
-            if (!$mensaje) {
-                throw new \Exception('Mensaje no encontrado');
-            }
-
-            $data = [
-                'mensaje' => $mensaje->contenido,
-                'mensaje_tipo' => $mensaje->tipo,
-                'mensaje_id' => $mensaje->id_mensaje
-            ];
-
-            return $this->sendCompleteNotification($userId, $data, $tipo, null, $sendEmail);
-        } catch (\Exception $e) {
-            Log::error('Error al crear notificación desde mensaje: ' . $e->getMessage());
-            return [
-                'success' => false,
-                'message' => 'Error al procesar mensaje: ' . $e->getMessage()
-            ];
-        }
-    }
-
-    /**
-     * Notificar a múltiples usuarios
-     */
-    private function notifyMultipleUsers(array $userIds, $data, $tipo = 'general', $sendEmail = false)
-    {
-        $results = [];
-        $successCount = 0;
-        $errorCount = 0;
-
-        foreach ($userIds as $userId) {
-            $result = $this->sendCompleteNotification($userId, $data, $tipo, null, $sendEmail);
-            $results[$userId] = $result;
-            
-            if ($result['success']) {
-                $successCount++;
-            } else {
-                $errorCount++;
-            }
-        }
-
-        return [
-            'success' => $errorCount === 0,
-            'message' => "Notificaciones procesadas: {$successCount} exitosas, {$errorCount} fallidas",
-            'summary' => [
-                'total' => count($userIds),
-                'success' => $successCount,
-                'errors' => $errorCount
-            ],
-            'details' => $results
-        ];
-    }
-
-    /**
-     * Notificar según tipo de evento del sistema
-     */
-    private function notifyByEvent($event, $userId, $eventData = [])
-    {
-        $notifications = $this->getNotificationsByEvent($event, $eventData);
-        
-        if (empty($notifications)) {
-            return [
-                'success' => false,
-                'message' => 'No hay configuración de notificación para el evento: ' . $event
-            ];
-        }
-
-        $data = $notifications['data'];
-        $tipo = $notifications['tipo'];
-        $sendEmail = $notifications['sendEmail'] ?? false;
-        $asunto = $notifications['asunto'] ?? null;
-
-        return $this->sendCompleteNotification($userId, $data, $tipo, $asunto, $sendEmail);
-    }
-
-    /**
-     * Configuración de notificaciones por evento
-     */
-    private function getNotificationsByEvent($event, $eventData = [])
-    {
-        $eventConfigs = [
-            'pedido_creado' => [
-                'tipo' => 'pedido',
-                'sendEmail' => true,
-                'asunto' => 'Pedido confirmado - Fresaterra',
-                'data' => [
-                    'mensaje' => 'Tu pedido #' . ($eventData['pedido_id'] ?? '') . ' ha sido confirmado y está siendo procesado.',
-                    'pedido_id' => $eventData['pedido_id'] ?? null,
-                    'estado' => 'confirmado',
-                    'monto' => $eventData['monto'] ?? null
-                ]
-            ],
-            'pedido_enviado' => [
-                'tipo' => 'envio',
-                'sendEmail' => true,
-                'asunto' => 'Tu pedido está en camino - Fresaterra',
-                'data' => [
-                    'mensaje' => 'Tu pedido #' . ($eventData['pedido_id'] ?? '') . ' ha sido enviado y está en camino.',
-                    'pedido_id' => $eventData['pedido_id'] ?? null,
-                    'tracking' => $eventData['tracking'] ?? null,
-                    'transportista' => $eventData['transportista'] ?? null
-                ]
-            ],
-            'producto_disponible' => [
-                'tipo' => 'producto',
-                'sendEmail' => false,
-                'data' => [
-                    'mensaje' => 'El producto "' . ($eventData['producto_nombre'] ?? '') . '" ya está disponible.',
-                    'producto_id' => $eventData['producto_id'] ?? null,
-                    'producto_nombre' => $eventData['producto_nombre'] ?? null
-                ]
-            ],
-            'promocion_nueva' => [
-                'tipo' => 'promocion',
-                'sendEmail' => true,
-                'asunto' => '¡Nueva promoción disponible! - Fresaterra',
-                'data' => [
-                    'mensaje' => 'Nueva promoción: ' . ($eventData['descuento'] ?? '0') . '% de descuento en productos seleccionados.',
-                    'descuento' => $eventData['descuento'] ?? null,
-                    'productos' => $eventData['productos'] ?? []
-                ]
-            ],
-            'inventario_bajo' => [
-                'tipo' => 'inventario',
-                'sendEmail' => false,
-                'data' => [
-                    'mensaje' => 'Stock bajo para el producto: ' . ($eventData['producto_nombre'] ?? ''),
-                    'producto_id' => $eventData['producto_id'] ?? null,
-                    'stock_actual' => $eventData['stock_actual'] ?? null
-                ]
-            ]
-        ];
-
-        return $eventConfigs[$event] ?? [];
-    }
-
-    /**
-     * Formatear datos para notificación campanita
-     */
-    private function formatCampanitaNotification($data, $tipo, $user)
-    {
-        return [
-            'tipo' => $tipo,
-            'mensaje' => $data['mensaje'] ?? '',
-            'data' => $data,
-            'fecha' => now()->toDateTimeString(),
-            'usuario_id' => $user->id_usuario,
-            'icon' => $this->getIconByType($tipo),
-            'color' => $this->getColorByType($tipo)
-        ];
-    }
-
-    /**
-     * Formatear datos para notificación email
-     */
-    private function formatEmailNotification($data, $tipo, $asunto, $user)
-    {
-        return [
-            'tipo' => $tipo,
-            'mensaje' => $data['mensaje'] ?? '',
-            'data' => $data,
-            'fecha' => now()->toDateTimeString(),
-            'usuario_id' => $user->id_usuario,
-            'asunto' => $asunto ?? 'Nueva notificación de Fresaterra'
-        ];
-    }
-
-    /**
-     * Construir mensaje de email
-     */
-    private function buildEmailMessage($data, $tipo, $asunto, $user)
-    {
-        $mailMessage = (new MailMessage)
-            ->subject($asunto ?? 'Nueva notificación de Fresaterra')
-            ->greeting('¡Hola ' . $user->nombre . '!')
-            ->line($data['mensaje'] ?? 'Tienes una nueva notificación.')
-            ->line('Detalles:');
-
-        // Agregar información adicional según el tipo
-        switch ($tipo) {
-            case 'pedido':
-                $mailMessage->line('Tipo: Actualización de pedido')
-                           ->line('Estado: ' . ($data['estado'] ?? 'Pendiente'))
-                           ->action('Ver pedido', url('/api/v1/orders/' . ($data['pedido_id'] ?? '')));
-                break;
-            
-            case 'producto':
-                $mailMessage->line('Tipo: Notificación de producto')
-                           ->line('Producto: ' . ($data['producto_nombre'] ?? ''))
-                           ->action('Ver producto', url('/api/v1/products/' . ($data['producto_id'] ?? '')));
-                break;
-            
-            case 'promocion':
-                $mailMessage->line('Tipo: Promoción especial');
-                if (isset($data['descuento'])) {
-                    $mailMessage->line('Oferta: ' . $data['descuento'] . '% de descuento');
-                }
-                $mailMessage->action('Ver promociones', url('/api/v1/products'));
-                break;
-            
-            case 'registro':
-                $mailMessage->line('Tipo: Confirmación de registro');
-                if (isset($data['fecha_registro'])) {
-                    $mailMessage->line('Fecha de registro: ' . $data['fecha_registro']);
-                }
-                if (isset($data['mensaje_bienvenida'])) {
-                    $mailMessage->line($data['mensaje_bienvenida']);
-                }
-                if (isset($data['action_url'])) {
-                    $mailMessage->action('Iniciar sesión', $data['action_url']);
-                } else {
-                    $mailMessage->action('Ir a la aplicación', url('/'));
-                }
-                break;
-            
-            default:
-                $mailMessage->line('Tipo: Notificación general')
-                           ->action('Ir a la aplicación', url('/'));
-                break;
-        }
-
-        $mailMessage->line('Gracias por usar Fresaterra!')
-                    ->salutation('Saludos, El equipo de Fresaterra');
-
-        return $mailMessage;
-    }
-
-    /**
-     * Obtener icono según tipo de notificación
-     */
-    private function getIconByType($tipo): string
-    {
-        $icons = [
-            'pedido' => 'shopping-cart',
-            'producto' => 'package',
-            'promocion' => 'tag',
-            'mensaje' => 'message-circle',
-            'sistema' => 'settings',
-            'envio' => 'truck',
-            'pago' => 'credit-card',
-            'inventario' => 'archive',
-            'general' => 'bell'
-        ];
-
-        return $icons[$tipo] ?? 'bell';
-    }
-
-    /**
-     * Obtener color según tipo de notificación
-     */
-    private function getColorByType($tipo): string
-    {
-        $colors = [
-            'pedido' => 'blue',
-            'producto' => 'green',
-            'promocion' => 'orange',
-            'mensaje' => 'purple',
-            'sistema' => 'gray',
-            'envio' => 'yellow',
-            'pago' => 'red',
-            'inventario' => 'indigo',
-            'general' => 'blue'
-        ];
-
-        return $colors[$tipo] ?? 'blue';
-    }
-
-    // =====================================
-    // MÉTODOS PÚBLICOS DE API
-    // =====================================
-
     /**
      * Obtener notificaciones del usuario autenticado
      * GET /api/v1/me/notificaciones
@@ -561,39 +175,66 @@ class NotificacionController extends Controller
         }
 
         try {
-            $userIds = [];
+            $users = collect();
             
             if ($request->get('todos_los_usuarios')) {
-                $userIds = User::pluck('id_usuario')->toArray();
+                $users = User::all();
             } elseif ($request->has('id_usuario')) {
-                $userIds = [$request->id_usuario];
+                $user = User::find($request->id_usuario);
+                if ($user) {
+                    $users->push($user);
+                }
             }
 
-            if (empty($userIds)) {
+            if ($users->isEmpty()) {
                 return response()->json([
                     'message' => 'No se encontraron usuarios destinatarios'
                 ], 400);
             }
 
-            $data = [
-                'mensaje' => $request->contenido_mensaje,
-                'fecha_notificacion' => now()->format('d/m/Y H:i:s'),
-                'tipo_notificacion' => ucfirst($request->tipo_mensaje)
-            ];
-
+            $createdNotifications = [];
             $enviarEmail = $request->get('enviar_email', false);
-            $asunto = $request->asunto_email ?? 'Notificación de Fresaterra: ' . ucfirst($request->tipo_mensaje);
 
-            $result = $this->notifyMultipleUsers($userIds, $data, $request->tipo_mensaje, $enviarEmail);
+            foreach ($users as $user) {
+                // Crear notificación en base de datos
+                $notification = Notificacion::create([
+                    'uuid' => \Illuminate\Support\Str::uuid()->toString(),
+                    'type' => $request->tipo_mensaje,
+                    'estado' => 'activo',
+                    'fecha_creacion' => now(),
+                    'usuarios_id_usuario' => $user->id_usuario,
+                    'data' => [
+                        'tipo_mensaje' => $request->tipo_mensaje,
+                        'contenido_mensaje' => $request->contenido_mensaje,
+                        'asunto_email' => $request->asunto_email
+                    ]
+                ]);
+                
+                $createdNotifications[] = $notification;
+
+                // Enviar email si se solicita
+                if ($enviarEmail) {
+                    try {
+                        $emailData = [
+                            'mensaje' => $request->contenido_mensaje,
+                            'fecha_notificacion' => now()->format('d/m/Y H:i:s'),
+                            'tipo_notificacion' => ucfirst($request->tipo_mensaje)
+                        ];
+
+                        $user->notify(new EmailNotification($emailData, $request->tipo_mensaje, $request->asunto_email ?? 'Notificación de Fresaterra: ' . ucfirst($request->tipo_mensaje)));
+                        
+                    } catch (\Exception $e) {
+                        Log::error("Error enviando email a usuario {$user->id_usuario}: " . $e->getMessage());
+                    }
+                }
+            }
 
             return response()->json([
-                'mensaje' => $result['message'],
-                'success' => $result['success'],
-                'total_enviadas' => $result['summary']['total'],
-                'exitosas' => $result['summary']['success'],
-                'errores' => $result['summary']['errors'],
-                'emails_enviados' => $enviarEmail ? $result['summary']['success'] : 0
-            ], $result['success'] ? 201 : 207);
+                'mensaje' => 'Notificación(es) enviada(s)',
+                'id_notificacion' => count($createdNotifications) === 1 ? $createdNotifications[0]->id_notificacion : null,
+                'total_enviadas' => count($createdNotifications),
+                'emails_enviados' => $enviarEmail ? count($createdNotifications) : 0
+            ], 201);
 
         } catch (\Exception $e) {
             Log::error('Error al enviar notificaciones administrativas: ' . $e->getMessage());
@@ -704,10 +345,6 @@ class NotificacionController extends Controller
         }
     }
 
-    // =====================================
-    // MÉTODOS ADICIONALES PARA EMAILS
-    // =====================================
-
     /**
      * Enviar email de prueba (para verificar configuración)
      * POST /api/v1/admin/emails/test
@@ -736,11 +373,11 @@ class NotificacionController extends Controller
                 'servidor_smtp' => 'smtp.gmail.com'
             ];
 
-            $result = $this->sendEmailNotification($user->id_usuario, $data, 'general', 'Correo de prueba - Fresaterra');
+            $user->notify(new EmailNotification($data, 'general', 'Correo de prueba - Fresaterra'));
 
             return response()->json([
-                'success' => $result['success'],
-                'message' => $result['message']
+                'success' => true,
+                'message' => 'Email de prueba enviado correctamente'
             ]);
         } catch (\Exception $e) {
             Log::error('Error al enviar email de prueba: ' . $e->getMessage());
@@ -776,11 +413,11 @@ class NotificacionController extends Controller
                 'action_url' => env('FRONTEND_URL', 'http://localhost:3000') . '/login'
             ];
 
-            $result = $this->sendEmailNotification($user->id_usuario, $emailData, 'registro', '¡Bienvenido a Fresaterra! - Confirmación de Registro');
+            $user->notify(new EmailNotification($emailData, 'registro', '¡Bienvenido a Fresaterra! - Confirmación de Registro'));
 
             return response()->json([
-                'success' => $result['success'],
-                'message' => $result['success'] ? 'Correo de confirmación de registro enviado exitosamente' : $result['message'],
+                'success' => true,
+                'message' => 'Correo de confirmación de registro enviado exitosamente',
                 'user_email' => $user->email,
                 'user_name' => $user->nombre ?? $user->email
             ]);
@@ -811,20 +448,53 @@ class NotificacionController extends Controller
         }
 
         try {
-            $emailData = [
-                'mensaje' => '¡Gracias por registrarte en Fresaterra! Tu cuenta ha sido creada exitosamente.',
-                'mensaje_bienvenida' => 'Ahora puedes disfrutar de nuestros productos frescos y naturales.',
-                'action_url' => env('FRONTEND_URL', 'http://localhost:3000') . '/login'
-            ];
+            $results = [];
+            $successCount = 0;
+            $errorCount = 0;
 
-            $result = $this->notifyMultipleUsers($request->user_ids, $emailData, 'registro', true);
+            foreach ($request->user_ids as $userId) {
+                try {
+                    $user = User::findOrFail($userId);
+
+                    $emailData = [
+                        'mensaje' => '¡Gracias por registrarte en Fresaterra! Tu cuenta ha sido creada exitosamente.',
+                        'email_usuario' => $user->email,
+                        'fecha_registro' => $user->created_at->format('d/m/Y H:i:s'),
+                        'mensaje_bienvenida' => 'Ahora puedes disfrutar de nuestros productos frescos y naturales.',
+                        'action_url' => env('FRONTEND_URL', 'http://localhost:3000') . '/login'
+                    ];
+
+                    $user->notify(new EmailNotification($emailData, 'registro', '¡Bienvenido a Fresaterra! - Confirmación de Registro'));
+
+                    $results[] = [
+                        'user_id' => $userId,
+                        'email' => $user->email,
+                        'status' => 'enviado',
+                        'message' => 'Correo enviado exitosamente'
+                    ];
+                    $successCount++;
+
+                } catch (\Exception $e) {
+                    Log::error("Error enviando correo a usuario {$userId}: " . $e->getMessage());
+                    $results[] = [
+                        'user_id' => $userId,
+                        'status' => 'error',
+                        'message' => 'Error al enviar correo: ' . $e->getMessage()
+                    ];
+                    $errorCount++;
+                }
+            }
 
             return response()->json([
-                'success' => $result['success'],
-                'message' => $result['message'],
-                'summary' => $result['summary'],
-                'details' => $result['details']
-            ], $result['success'] ? 200 : 207);
+                'success' => $successCount > 0,
+                'message' => "Proceso completado. {$successCount} correos enviados, {$errorCount} errores.",
+                'summary' => [
+                    'total_usuarios' => count($request->user_ids),
+                    'enviados_exitosamente' => $successCount,
+                    'errores' => $errorCount
+                ],
+                'details' => $results
+            ], $errorCount > 0 ? 207 : 200);
 
         } catch (\Exception $e) {
             Log::error('Error general en envío múltiple: ' . $e->getMessage());
@@ -866,97 +536,6 @@ class NotificacionController extends Controller
         }
     }
 
-    // =====================================
-    // MÉTODOS PÚBLICOS PARA USO EXTERNO
-    // =====================================
-
-    /**
-     * Enviar notificación por evento (público para otros controladores)
-     * POST /api/v1/notifications/event
-     */
-    public function sendEventNotification(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'event' => 'required|string',
-            'user_id' => 'required|exists:users,id_usuario',
-            'event_data' => 'sometimes|array'
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
-        try {
-            $result = $this->notifyByEvent($request->event, $request->user_id, $request->event_data ?? []);
-            
-            return response()->json($result);
-        } catch (\Exception $e) {
-            Log::error('Error al enviar notificación por evento: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Error al procesar notificación',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Enviar notificación personalizada (público para otros controladores)
-     * POST /api/v1/notifications/custom
-     */
-    public function sendCustomNotification(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'user_id' => 'required|exists:users,id_usuario',
-            'data' => 'required|array',
-            'data.mensaje' => 'required|string',
-            'tipo' => 'sometimes|string',
-            'send_email' => 'sometimes|boolean',
-            'asunto' => 'sometimes|string'
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
-        try {
-            $result = $this->sendCompleteNotification(
-                $request->user_id,
-                $request->data,
-                $request->tipo ?? 'general',
-                $request->asunto ?? null,
-                $request->send_email ?? false
-            );
-            
-            return response()->json($result);
-        } catch (\Exception $e) {
-            Log::error('Error al enviar notificación personalizada: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Error al procesar notificación',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Método estático para usar desde otros controladores
-     */
-    public static function notify($userId, $data, $tipo = 'general', $sendEmail = false, $asunto = null)
-    {
-        $controller = new self();
-        return $controller->sendCompleteNotification($userId, $data, $tipo, $asunto, $sendEmail);
-    }
-
-    /**
-     * Método estático para notificar por evento desde otros controladores
-     */
-    public static function notifyEvent($event, $userId, $eventData = [])
-    {
-        $controller = new self();
-        return $controller->notifyByEvent($event, $userId, $eventData);
-    }
-
     /**
      * Obtener lista de usuarios registrados (para verificación)
      * GET /api/v1/admin/users/registered
@@ -983,5 +562,384 @@ class NotificacionController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    // =====================================
+    // MÉTODOS DE API PARA NOTIFICATION SERVICE
+    // =====================================
+
+    /**
+     * Enviar notificación completa via API
+     * POST /api/v1/admin/notificaciones/send-complete
+     */
+    public function apiSendCompleteNotification(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'user_id' => 'required|exists:users,id_usuario',
+            'data' => 'required|array',
+            'data.mensaje' => 'required|string',
+            'tipo' => 'sometimes|string',
+            'asunto' => 'sometimes|string',
+            'send_email' => 'sometimes|boolean'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        try {
+            $result = $this->sendCompleteNotification(
+                $request->user_id,
+                $request->data,
+                $request->get('tipo', 'general'),
+                $request->get('asunto'),
+                $request->get('send_email', true)
+            );
+
+            return response()->json($result, $result['success'] ? 200 : 500);
+
+        } catch (\Exception $e) {
+            Log::error('Error en API sendCompleteNotification: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al enviar notificación: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Crear notificación desde mensaje via API
+     * POST /api/v1/admin/notificaciones/from-message
+     */
+    public function apiCreateNotificationFromMessage(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'user_id' => 'required|exists:users,id_usuario',
+            'mensaje_id' => 'required|exists:mensajes,id_mensaje',
+            'tipo' => 'sometimes|string',
+            'send_email' => 'sometimes|boolean'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        try {
+            $result = $this->createNotificationFromMessage(
+                $request->user_id,
+                $request->mensaje_id,
+                $request->get('tipo', 'general'),
+                $request->get('send_email', false)
+            );
+
+            return response()->json($result, $result['success'] ? 200 : 500);
+
+        } catch (\Exception $e) {
+            Log::error('Error en API createNotificationFromMessage: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al crear notificación desde mensaje: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Notificar múltiples usuarios via API
+     * POST /api/v1/admin/notificaciones/notify-multiple
+     */
+    public function apiNotifyMultipleUsers(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'user_ids' => 'required|array|min:1',
+            'user_ids.*' => 'exists:users,id_usuario',
+            'data' => 'required|array',
+            'data.mensaje' => 'required|string',
+            'tipo' => 'sometimes|string',
+            'send_email' => 'sometimes|boolean'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        try {
+            $result = $this->notifyMultipleUsers(
+                $request->user_ids,
+                $request->data,
+                $request->get('tipo', 'general'),
+                $request->get('send_email', false)
+            );
+
+            return response()->json($result, $result['success'] ? 200 : 207);
+
+        } catch (\Exception $e) {
+            Log::error('Error en API notifyMultipleUsers: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al notificar múltiples usuarios: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Notificar por evento via API
+     * POST /api/v1/admin/notificaciones/notify-by-event
+     */
+    public function apiNotifyByEvent(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'event' => 'required|string|in:pedido_creado,pedido_enviado,producto_disponible,promocion_nueva,inventario_bajo',
+            'user_id' => 'required|exists:users,id_usuario',
+            'event_data' => 'sometimes|array'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        try {
+            $result = $this->notifyByEvent(
+                $request->event,
+                $request->user_id,
+                $request->get('event_data', [])
+            );
+
+            return response()->json($result, $result['success'] ? 200 : 500);
+
+        } catch (\Exception $e) {
+            Log::error('Error en API notifyByEvent: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al notificar por evento: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // =====================================
+    // MÉTODOS DEL NOTIFICATION SERVICE
+    // =====================================
+
+    /**
+     * Enviar notificación tipo campanita (solo in-app)
+     */
+    public function sendInAppNotification($userId, $data, $tipo = 'general')
+    {
+        try {
+            $user = User::find($userId);
+            if (!$user) {
+                throw new \Exception('Usuario no encontrado');
+            }
+
+            // Enviar notificación campanita
+            $user->notify(new CampanitaNotification($data, $tipo));
+
+            return [
+                'success' => true,
+                'message' => 'Notificación in-app enviada correctamente',
+                'type' => 'campanita'
+            ];
+        } catch (\Exception $e) {
+            Log::error('Error al enviar notificación in-app: ' . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Error al enviar notificación: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Enviar notificación por email
+     */
+    public function sendEmailNotification($userId, $data, $tipo = 'general', $asunto = null)
+    {
+        try {
+            $user = User::find($userId);
+            if (!$user) {
+                throw new \Exception('Usuario no encontrado');
+            }
+
+            // Enviar notificación por email
+            $user->notify(new EmailNotification($data, $tipo, $asunto));
+
+            return [
+                'success' => true,
+                'message' => 'Notificación por email enviada correctamente',
+                'type' => 'email'
+            ];
+        } catch (\Exception $e) {
+            Log::error('Error al enviar notificación por email: ' . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Error al enviar notificación por email: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Enviar notificación completa (in-app + email)
+     */
+    public function sendCompleteNotification($userId, $data, $tipo = 'general', $asunto = null, $sendEmail = true)
+    {
+        $results = [];
+
+        // Enviar notificación in-app siempre
+        $inAppResult = $this->sendInAppNotification($userId, $data, $tipo);
+        $results['inApp'] = $inAppResult;
+
+        // Enviar email si se solicita
+        if ($sendEmail) {
+            $emailResult = $this->sendEmailNotification($userId, $data, $tipo, $asunto);
+            $results['email'] = $emailResult;
+        }
+
+        $allSuccess = $inAppResult['success'] && (!$sendEmail || $results['email']['success']);
+
+        return [
+            'success' => $allSuccess,
+            'message' => $allSuccess ? 'Notificaciones enviadas correctamente' : 'Algunas notificaciones fallaron',
+            'results' => $results
+        ];
+    }
+
+    /**
+     * Crear notificación usando mensaje existente
+     */
+    public function createNotificationFromMessage($userId, $mensajeId, $tipo = 'general', $sendEmail = false)
+    {
+        try {
+            $mensaje = Mensaje::find($mensajeId);
+            if (!$mensaje) {
+                throw new \Exception('Mensaje no encontrado');
+            }
+
+            $data = [
+                'mensaje' => $mensaje->contenido,
+                'mensaje_tipo' => $mensaje->tipo,
+                'mensaje_id' => $mensaje->id_mensaje
+            ];
+
+            return $this->sendCompleteNotification($userId, $data, $tipo, null, $sendEmail);
+        } catch (\Exception $e) {
+            Log::error('Error al crear notificación desde mensaje: ' . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Error al procesar mensaje: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Notificar a múltiples usuarios
+     */
+    public function notifyMultipleUsers(array $userIds, $data, $tipo = 'general', $sendEmail = false)
+    {
+        $results = [];
+        $successCount = 0;
+        $errorCount = 0;
+
+        foreach ($userIds as $userId) {
+            $result = $this->sendCompleteNotification($userId, $data, $tipo, null, $sendEmail);
+            $results[$userId] = $result;
+            
+            if ($result['success']) {
+                $successCount++;
+            } else {
+                $errorCount++;
+            }
+        }
+
+        return [
+            'success' => $errorCount === 0,
+            'message' => "Notificaciones procesadas: {$successCount} exitosas, {$errorCount} fallidas",
+            'summary' => [
+                'total' => count($userIds),
+                'success' => $successCount,
+                'errors' => $errorCount
+            ],
+            'details' => $results
+        ];
+    }
+
+    /**
+     * Notificar según tipo de evento del sistema
+     */
+    public function notifyByEvent($event, $userId, $eventData = [])
+    {
+        $notifications = $this->getNotificationsByEvent($event, $eventData);
+        
+        if (empty($notifications)) {
+            return [
+                'success' => false,
+                'message' => 'No hay configuración de notificación para el evento: ' . $event
+            ];
+        }
+
+        $data = $notifications['data'];
+        $tipo = $notifications['tipo'];
+        $sendEmail = $notifications['sendEmail'] ?? false;
+        $asunto = $notifications['asunto'] ?? null;
+
+        return $this->sendCompleteNotification($userId, $data, $tipo, $asunto, $sendEmail);
+    }
+
+    /**
+     * Configuración de notificaciones por evento
+     */
+    private function getNotificationsByEvent($event, $eventData = [])
+    {
+        $eventConfigs = [
+            'pedido_creado' => [
+                'tipo' => 'pedido',
+                'sendEmail' => true,
+                'asunto' => 'Pedido confirmado - Fresaterra',
+                'data' => [
+                    'mensaje' => 'Tu pedido #' . ($eventData['pedido_id'] ?? '') . ' ha sido confirmado y está siendo procesado.',
+                    'pedido_id' => $eventData['pedido_id'] ?? null,
+                    'estado' => 'confirmado',
+                    'monto' => $eventData['monto'] ?? null
+                ]
+            ],
+            'pedido_enviado' => [
+                'tipo' => 'envio',
+                'sendEmail' => true,
+                'asunto' => 'Tu pedido está en camino - Fresaterra',
+                'data' => [
+                    'mensaje' => 'Tu pedido #' . ($eventData['pedido_id'] ?? '') . ' ha sido enviado y está en camino.',
+                    'pedido_id' => $eventData['pedido_id'] ?? null,
+                    'tracking' => $eventData['tracking'] ?? null,
+                    'transportista' => $eventData['transportista'] ?? null
+                ]
+            ],
+            'producto_disponible' => [
+                'tipo' => 'producto',
+                'sendEmail' => false,
+                'data' => [
+                    'mensaje' => 'El producto "' . ($eventData['producto_nombre'] ?? '') . '" ya está disponible.',
+                    'producto_id' => $eventData['producto_id'] ?? null,
+                    'producto_nombre' => $eventData['producto_nombre'] ?? null
+                ]
+            ],
+            'promocion_nueva' => [
+                'tipo' => 'promocion',
+                'sendEmail' => true,
+                'asunto' => '¡Nueva promoción disponible! - Fresaterra',
+                'data' => [
+                    'mensaje' => 'Nueva promoción: ' . ($eventData['descuento'] ?? '0') . '% de descuento en productos seleccionados.',
+                    'descuento' => $eventData['descuento'] ?? null,
+                    'productos' => $eventData['productos'] ?? []
+                ]
+            ],
+            'inventario_bajo' => [
+                'tipo' => 'inventario',
+                'sendEmail' => false,
+                'data' => [
+                    'mensaje' => 'Stock bajo para el producto: ' . ($eventData['producto_nombre'] ?? ''),
+                    'producto_id' => $eventData['producto_id'] ?? null,
+                    'stock_actual' => $eventData['stock_actual'] ?? null
+                ]
+            ]
+        ];
+
+        return $eventConfigs[$event] ?? [];
     }
 }

@@ -26,12 +26,12 @@ class SendTestNotification extends Command
      */
     protected $description = 'Enviar una notificación de prueba a un usuario específico';
 
-    protected $notificacionController;
+    protected $notificationController;
 
-    public function __construct(NotificacionController $notificacionController)
+    public function __construct(NotificacionController $notificationController)
     {
         parent::__construct();
-        $this->notificacionController = $notificacionController;
+        $this->notificationController = $notificationController;
     }
 
     /**
@@ -63,7 +63,7 @@ class SendTestNotification extends Command
             'fecha_envio' => now()->toDateTimeString()
         ];
 
-        $result = $this->notificationService->sendCompleteNotification(
+        $result = $this->notificationController->sendCompleteNotification(
             $userId,
             $data,
             $type,
