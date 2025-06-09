@@ -7,6 +7,7 @@ use App\Models\Pago;
 use App\Models\Pedido;
 use App\Models\MetodosPago;
 use App\Models\Envio;
+use App\Models\Direccion;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Tymon\JWTAuth\Facades\JWTAuth;
@@ -542,9 +543,7 @@ class PagosController extends Controller
                 'error' => 'Error al obtener estadísticas de pagos'
             ], 500);
         }
-    }
-
-    /**
+    }    /**
      * Crear registro de envío automáticamente cuando el pago es confirmado
      * @param Pedido $pedido
      * @return void
@@ -552,39 +551,62 @@ class PagosController extends Controller
     private function createShippingRecord(Pedido $pedido)
     {
         try {
-            // Verificar si ya existe un envío para este pedido
+            // Verificar si ya existe un envío para este pedido (creado durante el checkout)
             $existingShipping = Envio::where('pedidos_id_pedido', $pedido->id_pedido)->first();
             
             if ($existingShipping) {
-                Log::info('Ya existe un envío para el pedido', [
+                Log::info('Ya existe un envío para el pedido - manteniendo costo original', [
                     'pedido_id' => $pedido->id_pedido,
-                    'envio_id' => $existingShipping->id_envio
+                    'envio_id' => $existingShipping->id_envio,
+                    'monto_envio_existente' => $existingShipping->monto_envio
                 ]);
+                  // Solo actualizar el estado si es necesario, pero mantener el monto original
+                if ($existingShipping->estado === 'pendiente') {
+                    $existingShipping->update(['estado' => 'confirmado']);
+                    Log::info('Estado de envío actualizado a confirmado', [
+                        'envio_id' => $existingShipping->id_envio
+                    ]);
+                }
+
+                // Verificar si hay una dirección que necesita ser asignada a este envío
+                $this->assignAddressToShipping($existingShipping, $pedido);
                 return;
             }
 
-            // Calcular costo de envío (puede ser 0 si hay promociones)
-            $costoEnvio = $this->calculateShippingCost($pedido);
+            // Si no existe envío, calcular costo usando la lógica del frontend (fallback)
+            $costoEnvio = $this->calculateShippingCostFromOrder($pedido);
             
-            // Asignar transportista (rotación simple - puede mejorarse)
-            $transportistaId = $this->assignTransporter();
+            // Asignar transportista (rotación simple)
+            $transportistaId = $this->assignTransporter();            // Obtener la dirección predeterminada del usuario para asignar al envío
+            $defaultAddress = Direccion::where('usuarios_id_usuario', $pedido->usuarios_id_usuario)
+                                     ->where('predeterminada', 'si')
+                                     ->first();
+            
+            // Si no hay dirección predeterminada, usar cualquier dirección del usuario
+            if (!$defaultAddress) {
+                $defaultAddress = Direccion::where('usuarios_id_usuario', $pedido->usuarios_id_usuario)
+                                         ->first();
+            }
 
-            // Crear el registro de envío
+            // Crear el registro de envío con estado "confirmado" ya que el pago fue aprobado
             $envio = Envio::create([
                 'monto_envio' => $costoEnvio,
-                'estado' => 'programado',
-                'fecha_envio' => date('Y-m-d H:i:s', strtotime('+1 day')), // Envío programado para el día siguiente
+                'estado' => 'confirmado', // Estado confirmado ya que el pago fue aprobado
+                'fecha_envio' => now()->addDay(), // Programado para el día siguiente
                 'transportistas_id_transportista' => $transportistaId,
-                'pedidos_id_pedido' => $pedido->id_pedido
-            ]);
-
-            Log::info('Envío creado automáticamente', [
+                'pedidos_id_pedido' => $pedido->id_pedido,
+                'direcciones_id_direccion' => $defaultAddress ? $defaultAddress->id_direccion : null
+            ]);            Log::info('Envío creado automáticamente desde confirmación de pago (fallback)', [
                 'pedido_id' => $pedido->id_pedido,
                 'envio_id' => $envio->id_envio,
                 'transportista_id' => $transportistaId,
                 'monto_envio' => $costoEnvio,
-                'estado' => 'programado'
+                'estado' => 'confirmado',
+                'direccion_id' => $defaultAddress ? $defaultAddress->id_direccion : null,
+                'direccion_asignada' => $defaultAddress ? 'si' : 'no'
             ]);
+
+            // Ya no necesitamos llamar assignAddressToShipping porque la dirección ya está asignada directamente
 
         } catch (\Exception $e) {
             Log::error('Error al crear registro de envío automático', [
@@ -597,23 +619,43 @@ class PagosController extends Controller
     }
 
     /**
-     * Calcular costo de envío
+     * Calcular costo de envío basado en los items del pedido (lógica del frontend)
      * @param Pedido $pedido
      * @return float
      */
-    private function calculateShippingCost(Pedido $pedido)
+    private function calculateShippingCostFromOrder(Pedido $pedido)
     {
-        // Lógica básica: envío gratis para pedidos >= S/ 30
-        // Esto puede ser más complejo según las reglas de negocio
-        
-        if ($pedido->monto_total >= 30.00) {
-            return 0.00; // Envío gratis
+        try {
+            // Obtener los items del pedido con sus productos
+            $pedidoItems = $pedido->pedido_items()->with('producto')->get();
+            
+            // Calcular subtotal de paquetes de fresas (categoryId: '1' según el frontend)
+            $strawberryPacksSubtotal = 0;
+            
+            foreach ($pedidoItems as $item) {
+                // Verificar si el producto pertenece a la categoría de paquetes de fresas
+                if ($item->producto && $item->producto->categorias_id_categoria == 1) {
+                    $strawberryPacksSubtotal += $item->subtotal;
+                }
+            }
+            
+            // Aplicar la misma lógica del frontend: envío gratis si subtotal de fresas >= S/ 30
+            if ($strawberryPacksSubtotal >= 30.00) {
+                return 0.00; // Envío gratis
+            }
+            
+            return 5.99; // Costo fijo como en el frontend
+            
+        } catch (\Exception $e) {
+            Log::error('Error calculando costo de envío', [
+                'pedido_id' => $pedido->id_pedido,
+                'error' => $e->getMessage()
+            ]);
+            
+            // Fallback: usar la lógica anterior si hay error
+            return $pedido->monto_total >= 30.00 ? 0.00 : 5.99;
         }
-        
-        return 10.00; // Costo fijo de envío
-    }
-
-    /**
+    }    /**
      * Asignar transportista (rotación simple)
      * @return int
      */
@@ -639,8 +681,275 @@ class PagosController extends Controller
         $ultimoTransportistaIndex = array_search($ultimoEnvio->transportistas_id_transportista, $transportistas);
         
         // Asignar el siguiente transportista (rotación)
-        $siguienteIndex = ($ultimoTransportistaIndex + 1) % count($transportistas);
-        
-        return $transportistas[$siguienteIndex];
+        $siguienteIndex = ($ultimoTransportistaIndex + 1) % count($transportistas);        return $transportistas[$siguienteIndex];
+    }
+
+    /**
+     * Asignar una dirección al envío si aún no tiene una asignada
+     * @param Envio $envio
+     * @param Pedido $pedido
+     * @return void
+     */    private function assignAddressToShipping(Envio $envio, Pedido $pedido)
+    {
+        try {
+            // Verificar si ya hay una dirección asignada a este envío (nueva relación)
+            if ($envio->direcciones_id_direccion) {
+                Log::info('Ya hay una dirección asignada a este envío', [
+                    'envio_id' => $envio->id_envio,
+                    'direccion_id' => $envio->direcciones_id_direccion
+                ]);
+                return;
+            }
+
+            // Buscar la dirección predeterminada del usuario del pedido
+            $defaultAddress = Direccion::where('usuarios_id_usuario', $pedido->usuarios_id_usuario)
+                                     ->where('predeterminada', 'si')
+                                     ->first();
+
+            if ($defaultAddress) {
+                $envio->update(['direcciones_id_direccion' => $defaultAddress->id_direccion]);
+                Log::info('Dirección predeterminada asignada al envío durante confirmación de pago', [
+                    'envio_id' => $envio->id_envio,
+                    'direccion_id' => $defaultAddress->id_direccion,
+                    'direccion' => $defaultAddress->calle . ' ' . $defaultAddress->numero . ', ' . $defaultAddress->distrito
+                ]);
+            } else {
+                // Si no hay dirección predeterminada, buscar cualquier dirección disponible del usuario
+                $anyAddress = Direccion::where('usuarios_id_usuario', $pedido->usuarios_id_usuario)
+                                     ->first();
+                
+                if ($anyAddress) {
+                    $envio->update(['direcciones_id_direccion' => $anyAddress->id_direccion]);
+                    Log::info('Dirección disponible asignada al envío durante confirmación de pago', [
+                        'envio_id' => $envio->id_envio,
+                        'direccion_id' => $anyAddress->id_direccion,
+                        'direccion' => $anyAddress->calle . ' ' . $anyAddress->numero . ', ' . $anyAddress->distrito
+                    ]);
+                } else {
+                    Log::warning('No se encontró ninguna dirección disponible para asignar al envío', [
+                        'envio_id' => $envio->id_envio,
+                        'usuario_id' => $pedido->usuarios_id_usuario,
+                        'pedido_id' => $pedido->id_pedido
+                    ]);
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error('Error al asignar dirección al envío', [
+                'envio_id' => $envio->id_envio,
+                'pedido_id' => $pedido->id_pedido,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Actualizar estados después de regresar de Mercado Pago
+     * POST /payments/update-status-from-mp
+     */
+    public function updateStatusFromMercadoPago(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'order_id' => 'required|integer|exists:pedidos,id_pedido',
+                'payment_status' => 'required|string|in:approved,pending,rejected,cancelled'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'error' => $validator->errors()
+                ], 422);
+            }
+
+            $orderId = $request->order_id;
+            $paymentStatus = $request->payment_status;
+
+            // Buscar el pedido
+            $pedido = Pedido::find($orderId);
+            if (!$pedido) {
+                return response()->json([
+                    'error' => 'Pedido no encontrado'
+                ], 404);
+            }
+
+            // Buscar el pago pendiente para este pedido
+            $pago = Pago::where('pedidos_id_pedido', $orderId)
+                       ->where('estado_pago', 'pendiente')
+                       ->first();
+
+            if (!$pago) {
+                return response()->json([
+                    'error' => 'Pago pendiente no encontrado'
+                ], 404);
+            }
+
+            // Buscar el envío para este pedido
+            $envio = Envio::where('pedidos_id_pedido', $orderId)->first();
+
+            DB::beginTransaction();
+
+            try {
+                // Actualizar el estado del pago según la respuesta de Mercado Pago
+                $estadoPago = match($paymentStatus) {
+                    'approved' => 'completado',
+                    'pending' => 'pendiente',
+                    'rejected', 'cancelled' => 'fallido',
+                    default => 'pendiente'
+                };
+
+                $pago->update([
+                    'estado_pago' => $estadoPago,
+                    'referencia_pago' => 'MP_' . time() . '_' . $orderId,
+                ]);
+
+                // Actualizar el estado del pedido y envío
+                if ($estadoPago === 'completado') {
+                    $pedido->update(['estado' => 'confirmado']);
+                    
+                    // Actualizar estado del envío si existe
+                    if ($envio) {
+                        $envio->update(['estado' => 'confirmado']);
+                    }
+                    
+                } elseif ($estadoPago === 'fallido') {
+                    $pedido->update(['estado' => 'cancelado']);
+                    
+                    // Cancelar envío si existe
+                    if ($envio) {
+                        $envio->update(['estado' => 'cancelado']);
+                    }
+                }
+
+                DB::commit();
+
+                Log::info('Estados actualizados desde frontend después de Mercado Pago', [
+                    'pedido_id' => $orderId,
+                    'estado_pago' => $estadoPago,
+                    'estado_pedido' => $pedido->estado,
+                    'estado_envio' => $envio ? $envio->estado : 'No encontrado'
+                ]);
+
+                return response()->json([
+                    'message' => 'Estados actualizados exitosamente',
+                    'payment_status' => $estadoPago,
+                    'order_status' => $pedido->estado,
+                    'shipping_status' => $envio ? $envio->estado : null
+                ], 200);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Error al actualizar estados desde frontend: ' . $e->getMessage(), [
+                'request_data' => $request->all(),
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'error' => 'Error al actualizar los estados'
+            ], 500);
+        }
+    }
+
+    /**
+     * Confirmar pago exitoso al regresar de Mercado Pago
+     * POST /payments/success
+     */
+    public function handlePaymentSuccess(Request $request)
+    {
+        try {
+            $user = JWTAuth::parseToken()->authenticate();
+
+            if (!$user) {
+                return response()->json([
+                    'error' => 'Usuario no autenticado'
+                ], 401);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'order_id' => 'required|integer',
+                'payment_id' => 'nullable|string',
+                'status' => 'nullable|string'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'error' => $validator->errors()
+                ], 422);
+            }
+
+            $orderId = $request->order_id;
+
+            // Buscar el pedido que pertenece al usuario autenticado
+            $pedido = Pedido::where('id_pedido', $orderId)
+                          ->where('usuarios_id_usuario', $user->id_usuario)
+                          ->first();
+
+            if (!$pedido) {
+                return response()->json([
+                    'error' => 'Pedido no encontrado o no autorizado'
+                ], 404);
+            }
+
+            // Buscar el pago asociado al pedido
+            $pago = Pago::where('pedidos_id_pedido', $orderId)->first();
+
+            if (!$pago) {
+                return response()->json([
+                    'error' => 'Pago no encontrado para este pedido'
+                ], 404);
+            }
+
+            DB::beginTransaction();
+
+            try {
+                // Solo actualizar si el pago aún está pendiente
+                if ($pago->estado_pago === 'pendiente') {
+                    // Actualizar el estado del pago a completado
+                    $pago->update([
+                        'estado_pago' => 'completado',
+                        'referencia_pago' => $request->payment_id ? 'MP_' . $request->payment_id : 'MP_' . time() . '_' . $orderId,
+                    ]);
+
+                    // Actualizar el estado del pedido a confirmado
+                    $pedido->update(['estado' => 'confirmado']);
+
+                    Log::info('Pago confirmado exitosamente desde la página de éxito', [
+                        'pedido_id' => $orderId,
+                        'payment_id' => $request->payment_id,
+                        'user_id' => $user->id_usuario
+                    ]);
+                }
+
+                DB::commit();
+
+                return response()->json([
+                    'message' => 'Pago confirmado exitosamente',
+                    'order_id' => $orderId,
+                    'payment_status' => 'completado',
+                    'order_status' => 'confirmado'
+                ], 200);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
+            }
+
+        } catch (JWTException $e) {
+            return response()->json([
+                'error' => 'Token inválido'
+            ], 401);
+        } catch (\Exception $e) {
+            Log::error('Error al confirmar pago desde página de éxito: ' . $e->getMessage(), [
+                'request_data' => $request->all(),
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'error' => 'Error al confirmar el pago'
+            ], 500);
+        }
     }
 }

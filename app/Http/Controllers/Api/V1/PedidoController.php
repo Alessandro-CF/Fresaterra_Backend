@@ -9,6 +9,7 @@ use App\Models\Producto;
 use App\Models\Direccion;
 use App\Models\Pago;
 use App\Models\MetodosPago;
+use App\Models\Envio;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Tymon\JWTAuth\Facades\JWTAuth;
@@ -21,8 +22,7 @@ class PedidoController extends Controller
     /**
      * Obtener todos los pedidos del usuario autenticado
      * GET /me/orders
-     */
-    public function index()
+     */    public function index()
     {
         try {
             $user = JWTAuth::parseToken()->authenticate();
@@ -31,9 +31,7 @@ class PedidoController extends Controller
                 return response()->json([
                     'error' => 'Usuario no autenticado'
                 ], 401);
-            }
-
-            $pedidos = Pedido::with(['pedido_items.producto', 'pagos.metodos_pago', 'envios'])
+            }            $pedidos = Pedido::with(['pedido_items.producto', 'pagos.metodos_pago', 'envios.direccion', 'envios.transportista'])
                             ->where('usuarios_id_usuario', $user->id_usuario)
                             ->orderBy('fecha_creacion', 'desc')
                             ->get();
@@ -49,6 +47,11 @@ class PedidoController extends Controller
                 'error' => 'Token inválido'
             ], 401);
         } catch (\Exception $e) {
+            Log::error('Error al obtener pedidos: ' . $e->getMessage(), [
+                'user_id' => isset($user) ? $user->id_usuario : null,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'error' => 'Error al obtener pedidos'
             ], 500);
@@ -160,9 +163,7 @@ class PedidoController extends Controller
                 $metodoPago = MetodosPago::where('nombre', 'Mercado Pago')->first();
                 if (!$metodoPago) {
                     $metodoPago = MetodosPago::where('activo', true)->first(); // Fallback al primer método activo
-                }
-
-                if ($metodoPago) {
+                }                if ($metodoPago) {
                     $pago = Pago::create([
                         'fecha_pago' => now(),
                         'monto_pago' => $request->monto_total,
@@ -171,13 +172,14 @@ class PedidoController extends Controller
                         'pedidos_id_pedido' => $pedido->id_pedido,
                         'metodos_pago_id_metodo_pago' => $metodoPago->id_metodo_pago
                     ]);
-                    
-                    Log::info('Pago inicial creado', [
+                      Log::info('Pago inicial creado', [
                         'pago_id' => $pago->id_pago,
                         'pedido_id' => $pedido->id_pedido,
                         'metodo_pago' => $metodoPago->nombre,
                         'referencia' => $pago->referencia_pago
-                    ]);
+                    ]);                    // Crear registro de envío inmediatamente con información de dirección
+                    $shippingCostFromFrontend = $request->has('shipping_cost') ? $request->shipping_cost : null;
+                    $this->createShippingRecord($pedido, $shippingCostFromFrontend, $addressId);
                 }
 
                 DB::commit();
@@ -233,9 +235,7 @@ class PedidoController extends Controller
                 return response()->json([
                     'error' => 'Usuario no autenticado'
                 ], 401);
-            }
-
-            $pedido = Pedido::with(['pedido_items.producto', 'pagos.metodos_pago', 'envios', 'usuario'])
+            }            $pedido = Pedido::with(['pedido_items.producto', 'pagos.metodos_pago', 'envios.direccion', 'envios.transportista', 'usuario'])
                            ->where('id_pedido', $pedidoId)
                            ->where('usuarios_id_usuario', $user->id_usuario)
                            ->first();
@@ -360,7 +360,7 @@ class PedidoController extends Controller
     public function getAllOrders(Request $request)
     {
         try {
-            $query = Pedido::with(['usuario', 'pedido_items.producto', 'pagos.metodos_pago']);
+            $query = Pedido::with(['usuario', 'pedido_items.producto', 'pagos.metodos_pago', 'envios.direccion', 'envios.transportista']);
 
             // Filtros opcionales
             if ($request->has('estado')) {
@@ -431,12 +431,134 @@ class PedidoController extends Controller
             return response()->json([
                 'message' => 'Estadísticas de pedidos obtenidas exitosamente',
                 'statistics' => $stats
-            ], 200);
-
-        } catch (\Exception $e) {
+            ], 200);        } catch (\Exception $e) {
             return response()->json([
                 'error' => 'Error al obtener estadísticas de pedidos'
             ], 500);
         }
+    }    /**
+     * Crear registro de envío automáticamente al crear el pedido
+     * @param Pedido $pedido
+     * @param float|null $shippingCostFromFrontend Costo de envío calculado en el frontend
+     * @param int|null $addressId ID de la dirección de envío
+     * @return void
+     */
+    private function createShippingRecord(Pedido $pedido, $shippingCostFromFrontend = null, $addressId = null)
+    {
+        try {
+            // Usar el costo de envío del frontend si está disponible, sino calcular
+            $costoEnvio = $shippingCostFromFrontend !== null 
+                ? $shippingCostFromFrontend 
+                : $this->calculateShippingCostFromOrder($pedido);
+            
+            // Asignar transportista (rotación simple)
+            $transportistaId = $this->assignTransporter();            // Crear el registro de envío con estado "pendiente"
+            $envio = Envio::create([
+                'monto_envio' => $costoEnvio,
+                'estado' => 'pendiente', // Estado pendiente hasta que se confirme el pago
+                'fecha_envio' => now()->addDay(), // Programado para el día siguiente
+                'transportistas_id_transportista' => $transportistaId,
+                'pedidos_id_pedido' => $pedido->id_pedido,
+                'direcciones_id_direccion' => $addressId // NUEVA RELACIÓN: FK en envios hacia direcciones
+            ]);            Log::info('Envío creado al momento del checkout', [
+                'pedido_id' => $pedido->id_pedido,
+                'envio_id' => $envio->id_envio,
+                'transportista_id' => $transportistaId,
+                'monto_envio' => $costoEnvio,
+                'estado' => 'pendiente',
+                'direccion_id' => $addressId,
+                'shipping_from_frontend' => $shippingCostFromFrontend !== null
+            ]);
+
+            // Logging adicional para verificar la asignación de dirección
+            if ($addressId) {
+                Log::info('Dirección asignada al envío exitosamente', [
+                    'envio_id' => $envio->id_envio,
+                    'direccion_id' => $addressId
+                ]);
+            } else {
+                Log::warning('No se proporcionó addressId para asignar al envío', [
+                    'envio_id' => $envio->id_envio
+                ]);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Error al crear registro de envío en checkout', [
+                'pedido_id' => $pedido->id_pedido,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            // No lanzamos la excepción para que no falle el proceso de creación del pedido
+        }
+    }
+
+    /**
+     * Calcular costo de envío basado en los items del pedido (lógica del frontend)
+     * @param Pedido $pedido
+     * @return float
+     */
+    private function calculateShippingCostFromOrder(Pedido $pedido)
+    {
+        try {
+            // Obtener los items del pedido con sus productos
+            $pedidoItems = $pedido->pedido_items()->with('producto')->get();
+            
+            // Calcular subtotal de paquetes de fresas (categoryId: '1' según el frontend)
+            $strawberryPacksSubtotal = 0;
+            
+            foreach ($pedidoItems as $item) {
+                // Verificar si el producto pertenece a la categoría de paquetes de fresas
+                if ($item->producto && $item->producto->categorias_id_categoria == 1) {
+                    $strawberryPacksSubtotal += $item->subtotal;
+                }
+            }
+            
+            // Aplicar la misma lógica del frontend: envío gratis si subtotal de fresas >= S/ 30
+            if ($strawberryPacksSubtotal >= 30.00) {
+                return 0.00; // Envío gratis
+            }
+            
+            return 5.99; // Costo fijo como en el frontend
+            
+        } catch (\Exception $e) {
+            Log::error('Error calculando costo de envío', [
+                'pedido_id' => $pedido->id_pedido,
+                'error' => $e->getMessage()
+            ]);
+            
+            // Fallback: usar la lógica anterior si hay error
+            return $pedido->monto_total >= 30.00 ? 0.00 : 5.99;
+        }
+    }
+
+    /**
+     * Asignar transportista (rotación simple)
+     * @return int
+     */
+    private function assignTransporter()
+    {
+        // Obtener todos los transportistas disponibles
+        $transportistas = DB::table('transportistas')->pluck('id_transportista')->toArray();
+        
+        if (empty($transportistas)) {
+            // Si no hay transportistas, usar ID 1 por defecto
+            return 1;
+        }
+        
+        // Obtener el último envío para ver cuál transportista fue asignado
+        $ultimoEnvio = Envio::latest('id_envio')->first();
+        
+        if (!$ultimoEnvio) {
+            // Si es el primer envío, usar el primer transportista
+            return $transportistas[0];
+        }
+        
+        // Encontrar el índice del último transportista usado
+        $ultimoTransportistaIndex = array_search($ultimoEnvio->transportistas_id_transportista, $transportistas);
+        
+        // Asignar el siguiente transportista (rotación)
+        $siguienteIndex = ($ultimoTransportistaIndex + 1) % count($transportistas);
+        
+        return $transportistas[$siguienteIndex];
     }
 }

@@ -58,6 +58,7 @@ Route::prefix('v1')->group(function () {
             Route::post('confirm', 'confirmPayment');           // Confirmar pago (webhook MP)
             Route::get('/{id}', 'show');                        // Detalles de pago específico
             Route::patch('/{id}/status', 'updateStatus');       // Actualizar estado de pago
+            Route::post('success', 'handlePaymentSuccess');     // Confirmar pago exitoso al regresar de MP
         });
         
         // Gestión de pedidos del usuario

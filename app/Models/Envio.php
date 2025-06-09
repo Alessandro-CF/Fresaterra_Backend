@@ -35,7 +35,8 @@ class Envio extends Model
 		'monto_envio' => 'float',
 		'fecha_envio' => 'datetime',
 		'transportistas_id_transportista' => 'int',
-		'pedidos_id_pedido' => 'int'
+		'pedidos_id_pedido' => 'int',
+		'direcciones_id_direccion' => 'int'
 	];
 
 	protected $fillable = [
@@ -43,7 +44,8 @@ class Envio extends Model
 		'estado',
 		'fecha_envio',
 		'transportistas_id_transportista',
-		'pedidos_id_pedido'
+		'pedidos_id_pedido',
+		'direcciones_id_direccion'
 	];
 
 	public function pedido()
@@ -56,8 +58,8 @@ class Envio extends Model
 		return $this->belongsTo(Transportista::class, 'transportistas_id_transportista');
 	}
 
-	public function direcciones()
+	public function direccion()
 	{
-		return $this->hasMany(Direccion::class, 'envios_id_envio');
+		return $this->belongsTo(Direccion::class, 'direcciones_id_direccion');
 	}
 }
