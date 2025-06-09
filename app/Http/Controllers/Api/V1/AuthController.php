@@ -43,6 +43,9 @@ class AuthController extends Controller
             'estado' => true, // Usuario activo por defecto
         ]);
 
+        // Cargar la relación con el rol
+        $user->load('role');
+
         $token = JWTAuth::fromUser($user);
 
         return response()->json([
@@ -135,6 +138,8 @@ class AuthController extends Controller
                 ], 401);
             }
 
+            $user->load('role');
+            
             return response()->json([
                 'user' => $user
             ], 200);

@@ -65,7 +65,7 @@ class CategoriasController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'nombre' => 'required|string|min:3|max:100|unique:categorias,nombre',
-            'descripcion' => 'required|string|min:10|max:500',
+            'descripcion' => 'nullable|string|max:500',
         ]);
 
         if ($validator->fails()) {
@@ -146,7 +146,7 @@ class CategoriasController extends Controller
 
         $validator = Validator::make($request->all(), [
             'nombre' => 'required|string|min:3|max:100|unique:categorias,nombre,' . $id . ',id_categoria',
-            'descripcion' => 'required|string|min:10|max:500',
+            'descripcion' => 'nullable|string|max:500',
         ]);
 
         if ($validator->fails()) {
