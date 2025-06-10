@@ -25,7 +25,11 @@ class MercadoPagoController extends Controller
             'items.*.quantity' => 'required|integer|min:1', // Cantidad, mínimo 1
             'items.*.unit_price' => 'required|numeric|min:0.01', // Precio unitario, mínimo 0.01
             'items.*.description' => 'nullable|string|max:255', // Descripción opcional
-            // Puedes agregar más validaciones si esperas otros campos como 'id' o 'currency_id'
+            'back_urls' => 'required|array', // URLs de retorno requeridas
+            'back_urls.success' => 'required|url', // URL de éxito requerida
+            'back_urls.failure' => 'required|url', // URL de fallo requerida
+            'back_urls.pending' => 'required|url', // URL de pendiente requerida
+            'external_reference' => 'nullable|string', // Referencia externa opcional
         ]);
 
         $itemsForMercadoPago = [];
@@ -49,22 +53,21 @@ class MercadoPagoController extends Controller
             $itemsForMercadoPago[] = $item;
         }
 
-        // Obtener la URL del frontend desde las variables de entorno
-        $frontendUrl = env('FRONTEND_URL'); // Valor por defecto
-        $frontendUrl = rtrim($frontendUrl, '/'); // Eliminar la barra inclinada final si existe
-        Log::debug('Frontend URL para back_urls: ' . $frontendUrl); // <-- NUEVO LOG AÑADIDO
-
-        $backUrls = [
-            'success' => $frontendUrl . '/pago-exitoso', // Cambiado a /pago-exitoso para coincidir con el frontend
-            'failure' => $frontendUrl . '/pago-fallido', // Cambiado a /pago-fallido
-            'pending' => $frontendUrl . '/pago-pendiente', // Cambiado a /pago-pendiente
-        ];
+        // Obtener las URLs de retorno desde el request
+        $backUrls = $request->input('back_urls');
+        
+        Log::debug('Back URLs recibidas del frontend', $backUrls);
 
         $preferenceRequest = [
             'items'       => $itemsForMercadoPago,
             'back_urls'   => $backUrls,
-            'auto_return' => 'approved', // Re-habilitado
+            'auto_return' => 'approved',
         ];
+
+        // Agregar referencia externa si se proporciona
+        if ($request->has('external_reference')) {
+            $preferenceRequest['external_reference'] = $request->input('external_reference');
+        }
         try {
             $preference = $client->create($preferenceRequest);
             return response()->json([

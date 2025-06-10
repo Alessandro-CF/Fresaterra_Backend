@@ -8,6 +8,8 @@ use App\Http\Controllers\Api\V1\DireccionesController;
 use App\Http\Controllers\Api\V1\Admin\ProductosController;
 use App\Http\Controllers\Api\V1\Admin\CategoriasController;
 use App\Http\Controllers\Api\V1\Admin\InventarioController;
+use App\Http\Controllers\Api\V1\PagosController;
+use App\Http\Controllers\Api\V1\PedidoController;
 
 Route::prefix('v1')->group(function () {
     
@@ -50,6 +52,27 @@ Route::prefix('v1')->group(function () {
         
         // Pagos (requiere autenticación)
         Route::post('create-preference', [MercadoPagoController::class, 'createPreference']);
+        
+        // Gestión de pagos del usuario
+        Route::controller(PagosController::class)->prefix('payments')->group(function () {
+            Route::get('methods', 'getPaymentMethods');          // Métodos de pago activos
+            Route::get('/', 'getUserPayments');                 // Historial de pagos del usuario
+            Route::post('/', 'store');                          // Crear nuevo pago
+            Route::post('confirm', 'confirmPayment');           // Confirmar pago (webhook MP)
+            Route::get('/{id}', 'show');                        // Detalles de pago específico
+            Route::patch('/{id}/status', 'updateStatus');       // Actualizar estado de pago
+            Route::post('success', 'handlePaymentSuccess');     // Confirmar pago exitoso al regresar de MP
+        });
+        
+        // Gestión de pedidos del usuario
+        Route::controller(PedidoController::class)->prefix('orders')->group(function () {
+            Route::get('/', 'index');                           // Listar pedidos del usuario
+            Route::post('/', 'store');                          // Crear nuevo pedido
+            Route::get('/{id}', 'show');                        // Detalles de pedido específico
+            Route::patch('/{id}/status', 'updateStatus');       // Actualizar estado de pedido
+            Route::patch('/{id}/cancel', 'cancel');             // Cancelar pedido
+            Route::get('/{id}/payment', [PagosController::class, 'getPaymentByOrder']); // Info de pago del pedido
+        });
     });
 
     // * RUTAS DE ADMINISTRADOR (JWT + Admin)
@@ -105,6 +128,20 @@ Route::prefix('v1')->group(function () {
         Route::controller(DireccionesController::class)->group(function () {
             Route::get('admin/users/{userId}/addresses', 'getUserAddresses');     // Direcciones de un usuario
             Route::get('admin/addresses/statistics', 'getAddressStatistics');     // Estadísticas de direcciones
+        });
+        
+        // Gestión de pagos (admin)
+        Route::controller(PagosController::class)->prefix('admin/payments')->group(function () {
+            Route::get('/', 'getAllPayments');                  // Todos los pagos con filtros
+            Route::get('/statistics', 'getPaymentStatistics');  // Estadísticas de pagos
+            Route::patch('/{id}/status', 'adminUpdateStatus');  // Actualizar estado como admin
+        });
+        
+        // Gestión de pedidos (admin)
+        Route::controller(PedidoController::class)->prefix('admin/orders')->group(function () {
+            Route::get('/', 'getAllOrders');                    // Todos los pedidos con filtros
+            Route::get('/statistics', 'getOrderStatistics');    // Estadísticas de pedidos
+            Route::patch('/{id}/status', 'adminUpdateStatus');  // Actualizar estado como admin
         });
     });
 
