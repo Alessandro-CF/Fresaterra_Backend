@@ -20,6 +20,8 @@ return new class extends Migration
             $table->string('estado');
             $table->string('peso');
             $table->timestamp('fecha_creacion')->useCurrent();
+            $table->unsignedBigInteger('categorias_id_categoria');
+            $table->foreign('categorias_id_categoria')->references('id_categoria')->on('categorias');
             $table->timestamps();
         });
     }

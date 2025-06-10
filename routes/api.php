@@ -7,6 +7,9 @@ use App\Http\Controllers\Api\V1\ProductController;
 use App\Http\Controllers\Api\V1\DireccionesController;
 use App\Http\Controllers\Api\V1\PagosController;
 use App\Http\Controllers\Api\V1\PedidoController;
+use App\Http\Controllers\Api\V1\Admin\ProductosController;
+use App\Http\Controllers\Api\V1\Admin\CategoriasController;
+use App\Http\Controllers\Api\V1\Admin\InventarioController;
 
 Route::prefix('v1')->group(function () {
     
@@ -89,11 +92,36 @@ Route::prefix('v1')->group(function () {
         });
 
         // Gestión de productos (admin)
-        Route::controller(ProductController::class)->group(function () {
-            Route::post('products', 'store');
-            Route::get('products/{id}', 'show');
-            Route::patch('products/{id}', 'update');
-            Route::delete('products/{id}', 'destroy');
+        Route::controller(ProductosController::class)->prefix('admin')->group(function () {
+            Route::get('products', 'index');                           // Listar todos los productos
+            Route::post('products', 'store');                          // Crear nuevo producto
+            Route::get('products/low-stock', 'lowStock');              // Productos con bajo inventario
+            Route::get('products/{id}', 'show');                       // Mostrar producto específico
+            Route::put('products/{id}', 'update');                     // Actualizar producto completo
+            Route::patch('products/{id}', 'partialUpdate');            // Actualización parcial
+            Route::patch('products/{id}/status', 'updateStatus');      // Cambiar estado
+            Route::delete('products/{id}', 'destroy');                 // Eliminar producto
+        });
+
+        // Gestión de categorías (admin)
+        Route::controller(CategoriasController::class)->prefix('admin')->group(function () {
+            Route::get('categories', 'index');                         // Listar todas las categorías
+            Route::post('categories', 'store');                        // Crear nueva categoría
+            Route::get('categories/statistics', 'statistics');         // Estadísticas de categorías
+            Route::get('categories/{id}', 'show');                     // Mostrar categoría específica
+            Route::put('categories/{id}', 'update');                   // Actualizar categoría completa
+            Route::patch('categories/{id}', 'partialUpdate');          // Actualización parcial
+            Route::delete('categories/{id}', 'destroy');               // Eliminar categoría
+        });
+
+        // Gestión de inventario (admin)
+        Route::controller(InventarioController::class)->prefix('admin')->group(function () {
+            Route::get('inventory/products', 'getProductsInventory');          // Listar inventario de productos
+            Route::get('inventory/products/{id}', 'getProductInventory');      // Detalle inventario producto
+            Route::get('inventory/statistics', 'getStatistics');               // Estadísticas de inventario
+            Route::post('inventory', 'store');                                 // Crear registro inventario
+            Route::patch('inventory/products/{id}/stock', 'updateStock');      // Actualizar stock
+            Route::patch('inventory/products/{id}/status', 'updateStatus');    // Cambiar estado inventario
         });
 
          // Gestión de direcciones (admin)
