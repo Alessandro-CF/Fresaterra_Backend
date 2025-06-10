@@ -19,11 +19,14 @@ return new class extends Migration
             $table->string('url_imagen');
             $table->string('estado');
             $table->string('peso');
+            $table->unsignedBigInteger('categorias_id_categoria');  // <-- campo para categoría
             $table->timestamp('fecha_creacion')->useCurrent();
             $table->timestamps();
+        
+            // Foreign key para asegurar integridad referencial
+            $table->foreign('categorias_id_categoria')->references('id_categoria')->on('categorias')->onDelete('cascade');
         });
     }
-
     /**
      * Reverse the migrations.
      */

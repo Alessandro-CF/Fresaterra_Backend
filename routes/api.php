@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\ProductController;
 use App\Http\Controllers\Api\V1\DireccionesController;
 use App\Http\Controllers\Api\V1\PagosController;
 use App\Http\Controllers\Api\V1\PedidoController;
+use App\Http\Controllers\Api\V1\CartController;
 
 Route::prefix('v1')->group(function () {
     
@@ -21,7 +22,13 @@ Route::prefix('v1')->group(function () {
     
     // Productos públicos
     Route::get('products', [ProductController::class, 'index']);
+    Route::get('productos', [ProductController::class, 'index']);
+    Route::post('productos', [ProductController::class, 'store']); // <-- MOVER AQUÍ
 
+    Route::get('productos/destacados', [ProductController::class, 'featured']);
+    Route::get('productos/{id}', [ProductController::class, 'show']);
+    Route::get('categorias', [ProductController::class, 'categories']);
+    
     // * RUTAS PRIVADAS (Requieren autenticación JWT)
     Route::middleware('jwt.auth')->group(function () {
         
@@ -119,4 +126,12 @@ Route::prefix('v1')->group(function () {
     // * WEBHOOKS (Sin autenticación)  
     Route::post('mercadopago/notifications', [MercadoPagoController::class, 'handleWebhook'])
         ->name('mercadopago.notifications');
+
+    // Rutas de carrito
+    Route::get('carritos/usuario/{userId}', [CartController::class, 'show']);
+    Route::post('carritos', [CartController::class, 'store']);
+    Route::post('carritos/{cartId}/items', [CartController::class, 'addItem']);
+    Route::put('carritos/items/{itemId}', [CartController::class, 'updateItem']);
+    Route::delete('carritos/items/{itemId}', [CartController::class, 'deleteItem']);
+    Route::patch('carritos/{cartId}', [CartController::class, 'empty']);
 });

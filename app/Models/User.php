@@ -7,14 +7,17 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Tymon\JWTAuth\Contracts\JWTSubject;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class User extends Authenticatable implements JWTSubject
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable;
 
-    protected $table = 'users';
+   
     protected $primaryKey = 'id_usuario';
+    public $timestamps = false;
 
     /**
      * The attributes that are mass assignable.
@@ -58,15 +61,23 @@ class User extends Authenticatable implements JWTSubject
 
 
     //* Métodos para relacionar con otros modelos
-    public function role()
-	{
-		return $this->belongsTo(Rol::class, 'roles_id_rol');
-	}
+    public function role(): BelongsTo
+    {
+        return $this->belongsTo(Role::class, 'roles_id_rol', 'id_rol');
+    }
 
-	public function carritos()
-	{
-		return $this->hasMany(Carrito::class, 'usuarios_id_usuario');
-	}
+    public function carritos(): HasMany
+    {
+        return $this->hasMany(Cart::class, 'usuarios_id_usuario', 'id_usuario');
+    }
+
+    public function carritoActivo()
+    {
+        return $this->carritos()
+            ->where('estado', 'activo')
+            ->latest('fecha_creacion')
+            ->first();
+    }
 
 	public function comentarios()
 	{

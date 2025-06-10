@@ -14,12 +14,14 @@ return new class extends Migration
         Schema::create('inventarios', function (Blueprint $table) {
             $table->id('id_inventario');
             $table->integer('cantidad_disponible');
-            $table->timestamp('fecha_ingreso');
-            $table->timestamp('ultima_actualizacion');
+            $table->timestamp('fecha_ingreso')->useCurrent();
+            $table->timestamp('ultima_actualizacion')->useCurrent()->useCurrentOnUpdate();
+            
             $table->string('estado');
             $table->unsignedBigInteger('productos_id_producto');
             $table->foreign('productos_id_producto')->references('id_producto')->on('productos');
-            $table->timestamps();
+         
+
         });
     }
 
