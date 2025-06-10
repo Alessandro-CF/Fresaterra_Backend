@@ -33,8 +33,7 @@ class Direccion extends Model
 	//public $timestamps = true;
 
 	protected $casts = [
-		'usuarios_id_usuario' => 'int',
-		'envios_id_envio' => 'int'
+		'usuarios_id_usuario' => 'int'
 	];
 
 	protected $fillable = [
@@ -45,7 +44,6 @@ class Direccion extends Model
 		'referencia',
 		'predeterminada',
 		'usuarios_id_usuario'
-		// Temporalmente removido 'envios_id_envio' hasta implementar sistema de envíos
 	];
 
 	// * MÉTODOS HELPER
@@ -86,10 +84,10 @@ class Direccion extends Model
 	}
 
 	/**
-	 * Relación con el modelo Envio
+	 * Relación con el modelo Envio (uno a muchos)
 	 */
-	public function envio()
+	public function envios()
 	{
-		return $this->belongsTo(Envio::class, 'envios_id_envio');
+		return $this->hasMany(Envio::class, 'direcciones_id_direccion');
 	}
 }

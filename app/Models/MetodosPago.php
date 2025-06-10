@@ -28,7 +28,7 @@ class MetodosPago extends Model
 	protected $primaryKey = 'id_metodo_pago';
 
 	protected $casts = [
-		'activo' => 'binary',
+		'activo' => 'boolean',
 		'fecha_creacion' => 'datetime'
 	];
 

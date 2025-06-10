@@ -18,8 +18,10 @@ return new class extends Migration
             $table->timestamp('fecha_envio');
             $table->unsignedBigInteger('transportistas_id_transportista');
             $table->unsignedBigInteger('pedidos_id_pedido');
+            $table->unsignedBigInteger('direcciones_id_direccion')->nullable();
             $table->foreign('transportistas_id_transportista')->references('id_transportista')->on('transportistas');
             $table->foreign('pedidos_id_pedido')->references('id_pedido')->on('pedidos');
+            $table->foreign('direcciones_id_direccion')->references('id_direccion')->on('direcciones');
             $table->timestamps();
         });
     }

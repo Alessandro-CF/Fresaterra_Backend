@@ -20,10 +20,7 @@ return new class extends Migration
             $table->string('referencia')->nullable();
             $table->string('predeterminada')->default('si'); // 'si' o 'no'
             $table->unsignedBigInteger('usuarios_id_usuario');
-            $table->unsignedBigInteger('envios_id_envio')->nullable(); // Temporal hasta implementar envíos
             $table->foreign('usuarios_id_usuario')->references('id_usuario')->on('users');
-            // Comentamos temporalmente la foreign key de envíos hasta implementar el sistema
-            // $table->foreign('envios_id_envio')->references('id_envio')->on('envios');
             $table->timestamps();
         });
     }
