@@ -45,7 +45,8 @@ class Producto extends Model
 		'url_imagen',
 		'estado',
 		'peso',
-		'fecha_creacion'
+		'fecha_creacion',
+		'categorias_id_categoria'
 	];
 
 	public function carrito_items()
@@ -61,5 +62,13 @@ class Producto extends Model
 	public function pedido_items()
 	{
 		return $this->hasMany(PedidoItems::class, 'productos_id_producto');
+	}
+
+	/**
+	 * Relación con categoría - Un producto pertenece a una categoría
+	 */
+	public function categoria()
+	{
+		return $this->belongsTo(Categoria::class, 'categorias_id_categoria');
 	}
 }
