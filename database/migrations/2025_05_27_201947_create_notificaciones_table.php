@@ -13,10 +13,14 @@ return new class extends Migration
     {
         Schema::create('notificaciones', function (Blueprint $table) {
             $table->id('id_notificacion');
-            $table->string('estado');
+            $table->uuid('uuid')->unique()->nullable();
+            $table->string('type')->nullable(); // Tipo de notificación
+            $table->string('estado')->default('activo');
             $table->timestamp('fecha_creacion')->useCurrent();
+            $table->timestamp('read_at')->nullable(); // Para marcar como leída
+            $table->json('data')->nullable(); // Datos adicionales de la notificación
             $table->unsignedBigInteger('usuarios_id_usuario');
-            $table->unsignedBigInteger('mensajes_id_mensaje');
+            $table->unsignedBigInteger('mensajes_id_mensaje')->nullable();
             $table->foreign('usuarios_id_usuario')->references('id_usuario')->on('users');
             $table->foreign('mensajes_id_mensaje')->references('id_mensaje')->on('mensajes');
             $table->timestamps();

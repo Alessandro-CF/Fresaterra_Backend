@@ -5,14 +5,12 @@ namespace App\Http\Controllers\Api\V1;
 use App\Models\User;
 use App\Models\Notificacion;
 use App\Models\Mensaje;
-use App\Notifications\EmailNotification;
-use App\Notifications\CampanitaNotification;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Notification;
 
 class NotificacionController extends Controller
 {
@@ -139,7 +137,6 @@ class NotificacionController extends Controller
                     'message' => 'Notificación no encontrada o no pertenece al usuario'
                 ], 404);
             }
-
             $notification->delete();
 
             return response()->json([
@@ -154,7 +151,6 @@ class NotificacionController extends Controller
             ], 500);
         }
     }
-
     /**
      * Enviar notificación desde administrador (con opción de email)
      * POST /api/v1/admin/notificaciones
@@ -164,76 +160,46 @@ class NotificacionController extends Controller
         $validator = Validator::make($request->all(), [
             'id_usuario' => 'sometimes|required_without:todos_los_usuarios|exists:users,id_usuario',
             'todos_los_usuarios' => 'sometimes|required_without:id_usuario|boolean',
-            'tipo_mensaje' => 'required|string|in:general,promocion,sistema,urgente,novedad',
+            'tipo_mensaje' => 'required|string|in:general,promocion,sistema,urgente,novedad,email,campanita',
+            'asunto' => 'required|string|max:255',
             'contenido_mensaje' => 'required|string|max:1000',
-            'enviar_email' => 'sometimes|boolean',
-            'asunto_email' => 'sometimes|string|max:255'
+            'prioridad' => 'sometimes|string|in:baja,normal,alta,urgente'
         ]);
-
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 400);
         }
-
         try {
-            $users = collect();
+            $userIds = collect();
             
             if ($request->get('todos_los_usuarios')) {
-                $users = User::all();
+                $userIds = User::where('estado', 'activo')->pluck('id_usuario');
             } elseif ($request->has('id_usuario')) {
-                $user = User::find($request->id_usuario);
-                if ($user) {
-                    $users->push($user);
-                }
+                $userIds->push($request->id_usuario);
             }
 
-            if ($users->isEmpty()) {
+            if ($userIds->isEmpty()) {
                 return response()->json([
                     'message' => 'No se encontraron usuarios destinatarios'
                 ], 400);
             }
 
-            $createdNotifications = [];
-            $enviarEmail = $request->get('enviar_email', false);
+            $datos = [
+                'prioridad' => $request->get('prioridad', 'normal'),
+                'admin_id' => Auth::id(),
+                'fecha_envio' => now()->toDateTimeString()
+            ];
 
-            foreach ($users as $user) {
-                // Crear notificación en base de datos
-                $notification = Notificacion::create([
-                    'uuid' => \Illuminate\Support\Str::uuid()->toString(),
-                    'type' => $request->tipo_mensaje,
-                    'estado' => 'activo',
-                    'fecha_creacion' => now(),
-                    'usuarios_id_usuario' => $user->id_usuario,
-                    'data' => [
-                        'tipo_mensaje' => $request->tipo_mensaje,
-                        'contenido_mensaje' => $request->contenido_mensaje,
-                        'asunto_email' => $request->asunto_email
-                    ]
-                ]);
-                
-                $createdNotifications[] = $notification;
-
-                // Enviar email si se solicita
-                if ($enviarEmail) {
-                    try {
-                        $emailData = [
-                            'mensaje' => $request->contenido_mensaje,
-                            'fecha_notificacion' => now()->format('d/m/Y H:i:s'),
-                            'tipo_notificacion' => ucfirst($request->tipo_mensaje)
-                        ];
-
-                        $user->notify(new EmailNotification($emailData, $request->tipo_mensaje, $request->asunto_email ?? 'Notificación de Fresaterra: ' . ucfirst($request->tipo_mensaje)));
-                        
-                    } catch (\Exception $e) {
-                        Log::error("Error enviando email a usuario {$user->id_usuario}: " . $e->getMessage());
-                    }
-                }
-            }
-
+            $notificaciones = NotificationService::enviarAMultiplesUsuarios(
+                $userIds->toArray(),
+                $request->tipo_mensaje,
+                $request->asunto,
+                $request->contenido_mensaje,
+                $datos
+            );
             return response()->json([
-                'mensaje' => 'Notificación(es) enviada(s)',
-                'id_notificacion' => count($createdNotifications) === 1 ? $createdNotifications[0]->id_notificacion : null,
-                'total_enviadas' => count($createdNotifications),
-                'emails_enviados' => $enviarEmail ? count($createdNotifications) : 0
+                'mensaje' => 'Notificación(es) enviada(s) exitosamente',
+                'total_enviadas' => count($notificaciones),
+                'usuarios_notificados' => $userIds->count()
             ], 201);
 
         } catch (\Exception $e) {
@@ -244,7 +210,6 @@ class NotificacionController extends Controller
             ], 500);
         }
     }
-
     /**
      * Obtener todas las notificaciones (Admin)
      * GET /api/v1/admin/notificaciones
@@ -346,16 +311,15 @@ class NotificacionController extends Controller
     }
 
     /**
-     * Enviar email de prueba (para verificar configuración)
+     * Enviar email de prueba usando el servicio personalizado
      * POST /api/v1/admin/emails/test
      */
     public function sendTestEmail()
     {
         try {
-            // Buscar un usuario administrador o usar el usuario actual
+            // Usar el usuario autenticado o buscar un administrador
             $user = Auth::user();
             if (!$user) {
-                // Si no hay usuario autenticado, buscar el primer administrador
                 $user = User::where('roles_id_rol', 1)->first();
                 if (!$user) {
                     return response()->json([
@@ -365,20 +329,26 @@ class NotificacionController extends Controller
                 }
             }
 
-            $data = [
-                'mensaje' => '¡Este es un correo de prueba para verificar que el sistema de correos de Fresaterra está funcionando correctamente!',
+            $contenido = '¡Este es un correo de prueba para verificar que el sistema de correos de Fresaterra está funcionando correctamente!';
+            $datos = [
                 'fecha' => now()->format('d/m/Y H:i:s'),
                 'sistema' => 'API Fresaterra v1.0',
-                'email_configurado' => 'fresaterra@gmail.com',
-                'servidor_smtp' => 'smtp.gmail.com'
+                'servidor_smtp' => config('mail.mailers.smtp.host', 'No configurado')
             ];
 
-            $user->notify(new EmailNotification($data, 'general', 'Correo de prueba - Fresaterra'));
+            $notificacion = NotificationService::enviarEmail(
+                $user->id_usuario,
+                'Correo de prueba - Fresaterra',
+                $contenido,
+                $datos
+            );
 
             return response()->json([
                 'success' => true,
-                'message' => 'Email de prueba enviado correctamente'
+                'message' => 'Email de prueba enviado correctamente',
+                'notificacion_id' => $notificacion->id_notificacion
             ]);
+
         } catch (\Exception $e) {
             Log::error('Error al enviar email de prueba: ' . $e->getMessage());
             return response()->json([
@@ -405,15 +375,21 @@ class NotificacionController extends Controller
         try {
             $user = User::findOrFail($request->user_id);
 
-            $emailData = [
-                'mensaje' => '¡Gracias por registrarte en Fresaterra! Tu cuenta ha sido creada exitosamente.',
+            $contenido = '¡Gracias por registrarte en Fresaterra! Tu cuenta ha sido creada exitosamente. Ahora puedes disfrutar de nuestros productos frescos y naturales.';
+            $datos = [
                 'email_usuario' => $user->email,
                 'fecha_registro' => $user->created_at->format('d/m/Y H:i:s'),
                 'mensaje_bienvenida' => 'Ahora puedes disfrutar de nuestros productos frescos y naturales.',
-                'action_url' => env('FRONTEND_URL', 'http://localhost:3000') . '/login'
+                'action_url' => env('FRONTEND_URL', 'http://localhost:3000') . '/login',
+                'tipo' => 'registro'
             ];
 
-            $user->notify(new EmailNotification($emailData, 'registro', '¡Bienvenido a Fresaterra! - Confirmación de Registro'));
+            $notificacion = NotificationService::enviarEmail(
+                $user->id_usuario,
+                '¡Bienvenido a Fresaterra! - Confirmación de Registro',
+                $contenido,
+                $datos
+            );
 
             return response()->json([
                 'success' => true,
@@ -456,15 +432,21 @@ class NotificacionController extends Controller
                 try {
                     $user = User::findOrFail($userId);
 
-                    $emailData = [
-                        'mensaje' => '¡Gracias por registrarte en Fresaterra! Tu cuenta ha sido creada exitosamente.',
+                    $contenido = '¡Gracias por registrarte en Fresaterra! Tu cuenta ha sido creada exitosamente. Ahora puedes disfrutar de nuestros productos frescos y naturales.';
+                    $datos = [
                         'email_usuario' => $user->email,
                         'fecha_registro' => $user->created_at->format('d/m/Y H:i:s'),
                         'mensaje_bienvenida' => 'Ahora puedes disfrutar de nuestros productos frescos y naturales.',
-                        'action_url' => env('FRONTEND_URL', 'http://localhost:3000') . '/login'
+                        'action_url' => env('FRONTEND_URL', 'http://localhost:3000') . '/login',
+                        'tipo' => 'registro'
                     ];
 
-                    $user->notify(new EmailNotification($emailData, 'registro', '¡Bienvenido a Fresaterra! - Confirmación de Registro'));
+                    $notificacion = NotificationService::enviarEmail(
+                        $user->id_usuario,
+                        '¡Bienvenido a Fresaterra! - Confirmación de Registro',
+                        $contenido,
+                        $datos
+                    );
 
                     $results[] = [
                         'user_id' => $userId,
@@ -730,13 +712,23 @@ class NotificacionController extends Controller
                 throw new \Exception('Usuario no encontrado');
             }
 
-            // Enviar notificación campanita
-            $user->notify(new CampanitaNotification($data, $tipo));
+            // Preparar contenido y datos para NotificationService
+            $contenido = $data['mensaje'] ?? 'Notificación nueva';
+            $asunto = $data['asunto'] ?? 'Notificación';
+            
+            // Enviar notificación campanita usando NotificationService
+            $notificacion = NotificationService::enviarCampanita(
+                $userId,
+                $asunto,
+                $contenido,
+                $data
+            );
 
             return [
                 'success' => true,
                 'message' => 'Notificación in-app enviada correctamente',
-                'type' => 'campanita'
+                'type' => 'campanita',
+                'notification_id' => $notificacion->id_notificacion
             ];
         } catch (\Exception $e) {
             Log::error('Error al enviar notificación in-app: ' . $e->getMessage());
@@ -758,13 +750,23 @@ class NotificacionController extends Controller
                 throw new \Exception('Usuario no encontrado');
             }
 
-            // Enviar notificación por email
-            $user->notify(new EmailNotification($data, $tipo, $asunto));
+            // Preparar contenido y datos para NotificationService
+            $contenido = $data['mensaje'] ?? 'Notificación nueva';
+            $asuntoFinal = $asunto ?? $data['asunto'] ?? 'Notificación de Fresaterra';
+            
+            // Enviar notificación por email usando NotificationService
+            $notificacion = NotificationService::enviarEmail(
+                $userId,
+                $asuntoFinal,
+                $contenido,
+                $data
+            );
 
             return [
                 'success' => true,
                 'message' => 'Notificación por email enviada correctamente',
-                'type' => 'email'
+                'type' => 'email',
+                'notification_id' => $notificacion->id_notificacion
             ];
         } catch (\Exception $e) {
             Log::error('Error al enviar notificación por email: ' . $e->getMessage());
@@ -941,5 +943,322 @@ class NotificacionController extends Controller
         ];
 
         return $eventConfigs[$event] ?? [];
+    }
+
+    /**
+     * Enviar notificación por email usando servicio personalizado
+     * POST /api/v1/notificaciones/enviar-email
+     */
+    public function enviarEmail(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'user_id' => 'required|exists:users,id_usuario',
+            'asunto' => 'required|string|max:255',
+            'contenido' => 'required|string',
+            'prioridad' => 'sometimes|in:baja,normal,alta,urgente'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Datos inválidos',
+                'errors' => $validator->errors()
+            ], 400);
+        }
+
+        try {
+            $datos = [
+                'prioridad' => $request->prioridad ?? 'normal',
+                'metadata' => $request->metadata ?? []
+            ];
+
+            $notificacion = NotificationService::enviarEmail(
+                $request->user_id,
+                $request->asunto,
+                $request->contenido,
+                $datos
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Notificación de email enviada correctamente',
+                'data' => $notificacion->load(['usuario', 'mensaje'])
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error al enviar email: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al enviar la notificación: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Enviar notificación campanita usando servicio personalizado
+     * POST /api/v1/notificaciones/enviar-campanita
+     */
+    public function enviarCampanita(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'user_id' => 'required|exists:users,id_usuario',
+            'asunto' => 'required|string|max:255',
+            'contenido' => 'required|string',
+            'prioridad' => 'sometimes|in:baja,normal,alta,urgente'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Datos inválidos',
+                'errors' => $validator->errors()
+            ], 400);
+        }
+
+        try {
+            $datos = [
+                'prioridad' => $request->prioridad ?? 'normal',
+                'metadata' => $request->metadata ?? []
+            ];
+
+            $notificacion = NotificationService::enviarCampanita(
+                $request->user_id,
+                $request->asunto,
+                $request->contenido,
+                $datos
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Notificación campanita enviada correctamente',
+                'data' => $notificacion->load(['usuario', 'mensaje'])
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error al enviar campanita: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al enviar la notificación: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Enviar notificación directa usando servicio personalizado
+     * POST /api/v1/notificaciones/enviar-directa
+     */
+    public function enviarDirecta(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'user_id' => 'required|exists:users,id_usuario',
+            'tipo' => 'required|string|max:50',
+            'contenido' => 'required|string'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Datos inválidos',
+                'errors' => $validator->errors()
+            ], 400);
+        }
+
+        try {
+            $notificacion = NotificationService::enviarDirecta(
+                $request->user_id,
+                $request->tipo,
+                $request->contenido,
+                $request->metadata ?? []
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Notificación directa enviada correctamente',
+                'data' => $notificacion->load('usuario')
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error al enviar notificación directa: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al enviar la notificación: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Marcar notificación como leída usando servicio personalizado
+     * PUT /api/v1/notificaciones/marcar-leida/{id}
+     */
+    public function marcarComoLeida($id)
+    {
+        try {
+            $notificacion = NotificationService::marcarComoLeida($id);
+
+            if (!$notificacion) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Notificación no encontrada'
+                ], 404);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Notificación marcada como leída',
+                'data' => $notificacion
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error al marcar notificación como leída: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al marcar la notificación: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Marcar todas las notificaciones como leídas usando servicio personalizado
+     * PUT /api/v1/notificaciones/marcar-todas-leidas
+     */
+    public function marcarTodasComoLeidas(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'user_id' => 'required|exists:users,id_usuario'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'ID de usuario requerido',
+                'errors' => $validator->errors()
+            ], 400);
+        }
+
+        try {
+            $updated = NotificationService::marcarTodasComoLeidas($request->user_id);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Se marcaron {$updated} notificaciones como leídas",
+                'total_updated' => $updated
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error al marcar todas las notificaciones como leídas: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al marcar las notificaciones: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Obtener estadísticas usando servicio personalizado
+     * GET /api/v1/notificaciones/estadisticas
+     */
+    public function obtenerEstadisticas(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'user_id' => 'required|exists:users,id_usuario'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'ID de usuario requerido',
+                'errors' => $validator->errors()
+            ], 400);
+        }
+
+        try {
+            $estadisticas = NotificationService::obtenerEstadisticas($request->user_id);
+
+            return response()->json([
+                'success' => true,
+                'data' => $estadisticas
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error al obtener estadísticas: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener estadísticas: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Obtener notificaciones no leídas de un usuario
+     * GET /api/v1/notificaciones/no-leidas
+     */
+    public function obtenerNoLeidas(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'user_id' => 'required|exists:users,id_usuario'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'ID de usuario requerido',
+                'errors' => $validator->errors()
+            ], 400);
+        }
+
+        try {
+            $notificaciones = Notificacion::with(['usuario', 'mensaje'])
+                ->where('usuarios_id_usuario', $request->user_id)
+                ->whereNull('read_at')
+                ->where('estado', 'activo')
+                ->orderBy('fecha_creacion', 'desc')
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $notificaciones,
+                'total' => $notificaciones->count()
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error al obtener notificaciones no leídas: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener notificaciones: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Eliminar notificación (marcar como inactiva)
+     * DELETE /api/v1/notificaciones/eliminar/{id}
+     */
+    public function eliminarNotificacion($id)
+    {
+        try {
+            $notificacion = Notificacion::find($id);
+
+            if (!$notificacion) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Notificación no encontrada'
+                ], 404);
+            }
+
+            $notificacion->estado = 'inactivo';
+            $notificacion->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Notificación eliminada correctamente'
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error al eliminar notificación: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al eliminar la notificación: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }

@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Notifications\WelcomeUserNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Tymon\JWTAuth\Exceptions\JWTException;
 use Tymon\JWTAuth\Facades\JWTAuth;
@@ -14,33 +16,56 @@ class AuthController extends Controller
 {
     public function register(Request $request) {
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|min:3|max:100',
-            //'role' => 'required|string|in:admin,user',
+            'nombre' => 'required|string|min:2|max:50',
+            'apellidos' => 'required|string|min:2|max:50',
             'email' => 'required|email|unique:users,email',
-            'password' => 'required|string|min:10|confirmed', // Indica que se vuelva a escribir el password
+            'password' => 'required|string|min:10|confirmed',
+            'telefono' => 'nullable|string|max:20', // Hacer telefono opcional
         ]);
 
         if ($validator->fails()) {
             return response()->json([
-                'error' => $validator->errors()
+                'message' => 'Error de validación',
+                'errors' => $validator->errors()
             ], 422);
         }
 
         $user = User::create([
-            'name' => $request->get('name'),
-            // 'role' => $request->get('role'),
-            'role' => 'user', // Asignar rol por defecto
+            'nombre' => $request->get('nombre'),
+            'apellidos' => $request->get('apellidos'),
             'email' => $request->get('email'),
             'password' => bcrypt($request->get('password')),
+            'telefono' => $request->get('telefono', ''), // Valor por defecto si no se proporciona
+            'roles_id_rol' => 2, // Asignar rol por defecto (usuario)
         ]);
+
+        // Enviar notificación de bienvenida por correo
+        $emailSent = false;
+        try {
+            $user->notify(new WelcomeUserNotification($user));
+            $emailSent = true;
+            Log::info("Correo de bienvenida enviado exitosamente a: {$user->email}");
+        } catch (\Exception $e) {
+            // Log del error pero no fallar el registro
+            Log::error('Error enviando email de bienvenida: ' . $e->getMessage());
+        }
 
         $token = JWTAuth::fromUser($user);
 
-        return response()->json([
+        $response = [
             'message' => 'Usuario registrado exitosamente',
             'user' => $user,
             'token' => $token
-        ], 201);
+        ];
+
+        // Agregar información sobre el correo enviado
+        if ($emailSent) {
+            $response['email_notification'] = "Correo de confirmación enviado a {$user->email}";
+        } else {
+            $response['email_notification'] = "Usuario registrado, pero no se pudo enviar el correo de confirmación";
+        }
+
+        return response()->json($response, 201);
     }
 
     public function login(Request $request) {
@@ -51,7 +76,8 @@ class AuthController extends Controller
 
         if ($validator->fails()) {
             return response()->json([
-                'error' => $validator->errors()
+                'message' => 'Error de validación',
+                'errors' => $validator->errors()
             ], 422);
         }
 

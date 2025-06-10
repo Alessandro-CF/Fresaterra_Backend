@@ -6,7 +6,6 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\ProductController;
 use App\Http\Controllers\Api\V1\NotificacionController;
 use App\Http\Controllers\Api\V1\ComentarioController;
-use App\Http\Controllers\Api\V1\MensajeController;
 
 use App\Http\Middleware\IsUserAuth;
 use App\Http\Middleware\IsAdmin;
@@ -27,7 +26,7 @@ Route::prefix('v1')->group(function () {
     // Servicios públicos para probar API
     Route::get('comments', [ComentarioController::class, 'index']);
     Route::get('comments/{id}', [ComentarioController::class, 'show']);
-    // Rutas públicas para verificar usuarios registrados
+    // Rutas públicas para verificar usuarios registrados (sin autenticación)
     Route::get('users/registered', [NotificacionController::class, 'getRegisteredUsers']);
 
     // * PRIVATE ROUTES
@@ -67,6 +66,16 @@ Route::prefix('v1')->group(function () {
         });
     });
 
+    // Rutas API adicionales para NotificationService (protegidas)
+    Route::middleware([IsAdmin::class])->group(function () {
+        Route::prefix('admin/notificaciones')->group(function () {
+            Route::post('/send-complete', [NotificacionController::class, 'apiSendCompleteNotification']);
+            Route::post('/from-message', [NotificacionController::class, 'apiCreateNotificationFromMessage']);
+            Route::post('/notify-multiple', [NotificacionController::class, 'apiNotifyMultipleUsers']);
+            Route::post('/notify-by-event', [NotificacionController::class, 'apiNotifyByEvent']);
+        });
+    });
+
     // Rutas para confirmaciones de registro por email (solo administradores)
     Route::middleware([IsAdmin::class])->group(function () {
         Route::prefix('admin/emails')->group(function () {
@@ -78,27 +87,11 @@ Route::prefix('v1')->group(function () {
         });
         
         Route::prefix('admin/users')->group(function () {
-            // Obtener lista de usuarios registrados
+            // Obtener lista de usuarios registrados (acceso administrativo)
             Route::get('registered', [NotificacionController::class, 'getRegisteredUsers']);
         });
     });
     
-    // Rutas para mensajes
-    Route::prefix('messages')->group(function () {
-        // Rutas públicas (solo lectura)
-        Route::get('/', [MensajeController::class, 'index']);
-        Route::get('/{id}', [MensajeController::class, 'show']);
-        Route::get('/type/{tipo}', [MensajeController::class, 'getByType']);
-        Route::get('/types/available', [MensajeController::class, 'getTypes']);
-        
-        // Rutas para administradores (CRUD completo)
-        Route::middleware([IsAdmin::class])->group(function () {
-            Route::post('/', [MensajeController::class, 'store']);
-            Route::put('/{id}', [MensajeController::class, 'update']);
-            Route::patch('/{id}', [MensajeController::class, 'update']);
-            Route::delete('/{id}', [MensajeController::class, 'destroy']);
-        });
-    });
     
     // Rutas para comentarios
     Route::prefix('comments')->group(function () {
