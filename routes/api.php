@@ -134,4 +134,12 @@ Route::prefix('v1')->group(function () {
     Route::put('carritos/items/{itemId}', [CartController::class, 'updateItem']);
     Route::delete('carritos/items/{itemId}', [CartController::class, 'deleteItem']);
     Route::patch('carritos/{cartId}', [CartController::class, 'empty']);
+
+    // Carrito de compras
+    Route::middleware('auth:api')->group(function () {
+        Route::get('cart', [CartController::class, 'index']);
+        Route::post('cart', [CartController::class, 'store']);
+        Route::put('cart/{id}', [CartController::class, 'update']);
+        Route::delete('cart/{id}', [CartController::class, 'destroy']);
+    });
 });

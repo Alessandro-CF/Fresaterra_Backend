@@ -6,92 +6,55 @@ use App\Http\Controllers\Controller;
 use App\Models\Cart;
 use App\Models\CartItem;
 use App\Models\Product;
-use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Auth;
 
 class CartController extends Controller
 {
     /**
-     * Obtener el carrito activo de un usuario
+     * Obtener el carrito actual del usuario
      */
-    public function show(int $userId): JsonResponse
+    public function index(): JsonResponse
     {
-        $user = User::find($userId);
-        
-        if (!$user) {
+        try {
+            $cart = Cart::where('usuarios_id_usuario', Auth::id())
+                       ->where('estado', 'activo')
+                       ->first();
+
+            if (!$cart) {
+                $cart = Cart::create([
+                    'usuarios_id_usuario' => Auth::id(),
+                    'estado' => 'activo'
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Carrito recuperado exitosamente',
+                'data' => [
+                    'cart' => $cart,
+                    'total' => $cart->getTotal()
+                ]
+            ]);
+
+        } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Usuario no encontrado'
-            ], 404);
+                'message' => 'Error al recuperar el carrito',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        $cart = $user->carritoActivo();
-        
-        if (!$cart) {
-            return response()->json([
-                'success' => false,
-                'message' => 'El usuario no tiene un carrito activo'
-            ], 404);
-        }
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Carrito recuperado exitosamente',
-            'data' => [
-                'carrito' => $cart,
-                'total' => $cart->getTotal()
-            ]
-        ]);
-    }
-
-    /**
-     * Crear un nuevo carrito para un usuario
-     */
-    public function store(Request $request): JsonResponse
-    {
-        $validator = Validator::make($request->all(), [
-            'usuarios_id_usuario' => 'required|exists:usuarios,id_usuario'
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error de validación',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        $user = User::find($request->usuarios_id_usuario);
-
-        if ($user->carritoActivo()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'El usuario ya tiene un carrito activo'
-            ], 400);
-        }
-
-        $cart = Cart::create([
-            'estado' => 'activo',
-            'usuarios_id_usuario' => $request->usuarios_id_usuario,
-            'fecha_creacion' => now()
-        ]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Carrito creado exitosamente',
-            'data' => $cart
-        ], 201);
     }
 
     /**
      * Agregar un producto al carrito
      */
-    public function addItem(Request $request, int $cartId): JsonResponse
+    public function store(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'productos_id_producto' => 'required|exists:productos,id_producto',
+            'producto_id' => 'required|exists:productos,id_producto',
             'cantidad' => 'required|integer|min:1'
         ]);
 
@@ -103,43 +66,70 @@ class CartController extends Controller
             ], 422);
         }
 
-        $cart = Cart::find($cartId);
-        if (!$cart || $cart->estado !== 'activo') {
+        try {
+            // Obtener o crear el carrito activo del usuario
+            $cart = Cart::firstOrCreate(
+                [
+                    'usuarios_id_usuario' => Auth::id(),
+                    'estado' => 'activo'
+                ]
+            );
+
+            // Verificar si el producto existe y está disponible
+            $producto = Product::find($request->producto_id);
+            if (!$producto || $producto->estado !== 'disponible') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'El producto no está disponible'
+                ], 400);
+            }
+
+            // Buscar si el producto ya está en el carrito
+            $cartItem = CartItem::where('carritos_id_carrito', $cart->id_carrito)
+                              ->where('productos_id_producto', $request->producto_id)
+                              ->first();
+
+            if ($cartItem) {
+                // Actualizar cantidad si ya existe
+                $cartItem->cantidad += $request->cantidad;
+                $cartItem->save();
+            } else {
+                // Crear nuevo item si no existe
+                $cartItem = CartItem::create([
+                    'carritos_id_carrito' => $cart->id_carrito,
+                    'productos_id_producto' => $request->producto_id,
+                    'cantidad' => $request->cantidad
+                ]);
+            }
+
+            // Recargar el carrito con sus items
+            $cart->load('items.producto');
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Producto agregado al carrito exitosamente',
+                'data' => [
+                    'cart' => $cart,
+                    'total' => $cart->getTotal()
+                ]
+            ], 201);
+
+        } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Carrito no encontrado o no activo'
-            ], 404);
+                'message' => 'Error al agregar el producto al carrito',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        $cartItem = CartItem::where('carritos_id_carrito', $cartId)
-            ->where('productos_id_producto', $request->productos_id_producto)
-            ->first();
-
-        if ($cartItem) {
-            $cartItem->cantidad += $request->cantidad;
-            $cartItem->save();
-        } else {
-            $cartItem = CartItem::create([
-                'cantidad' => $request->cantidad,
-                'carritos_id_carrito' => $cartId,
-                'productos_id_producto' => $request->productos_id_producto
-            ]);
-        }
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Producto agregado al carrito exitosamente',
-            'data' => $cartItem
-        ]);
     }
 
     /**
      * Actualizar la cantidad de un producto en el carrito
      */
-    public function updateItem(Request $request, int $itemId): JsonResponse
+    public function update(Request $request, int $id): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'cantidad' => 'required|integer|min:1'
+            'cantidad' => 'required|integer|min:0'
         ]);
 
         if ($validator->fails()) {
@@ -150,84 +140,79 @@ class CartController extends Controller
             ], 422);
         }
 
-        $cartItem = CartItem::find($itemId);
-        if (!$cartItem) {
+        try {
+            $cartItem = CartItem::findOrFail($id);
+            
+            // Verificar que el item pertenece al carrito del usuario
+            $cart = Cart::where('id_carrito', $cartItem->carritos_id_carrito)
+                       ->where('usuarios_id_usuario', Auth::id())
+                       ->where('estado', 'activo')
+                       ->firstOrFail();
+
+            if ($request->cantidad === 0) {
+                // Eliminar el item si la cantidad es 0
+                $cartItem->delete();
+            } else {
+                // Actualizar la cantidad
+                $cartItem->cantidad = $request->cantidad;
+                $cartItem->save();
+            }
+
+            // Recargar el carrito con sus items
+            $cart->load('items.producto');
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Carrito actualizado exitosamente',
+                'data' => [
+                    'cart' => $cart,
+                    'total' => $cart->getTotal()
+                ]
+            ]);
+
+        } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Item no encontrado'
-            ], 404);
+                'message' => 'Error al actualizar el carrito',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        if ($cartItem->carrito->estado !== 'activo') {
-            return response()->json([
-                'success' => false,
-                'message' => 'El carrito no está activo'
-            ], 400);
-        }
-
-        $cartItem->cantidad = $request->cantidad;
-        $cartItem->save();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Cantidad actualizada exitosamente',
-            'data' => $cartItem
-        ]);
     }
 
     /**
-     * Eliminar un producto del carrito
+     * Eliminar un item del carrito
      */
-    public function deleteItem(int $itemId): JsonResponse
+    public function destroy(int $id): JsonResponse
     {
-        $cartItem = CartItem::find($itemId);
-        if (!$cartItem) {
+        try {
+            $cartItem = CartItem::findOrFail($id);
+            
+            // Verificar que el item pertenece al carrito del usuario
+            $cart = Cart::where('id_carrito', $cartItem->carritos_id_carrito)
+                       ->where('usuarios_id_usuario', Auth::id())
+                       ->where('estado', 'activo')
+                       ->firstOrFail();
+
+            $cartItem->delete();
+
+            // Recargar el carrito con sus items
+            $cart->load('items.producto');
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Item eliminado del carrito exitosamente',
+                'data' => [
+                    'cart' => $cart,
+                    'total' => $cart->getTotal()
+                ]
+            ]);
+
+        } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Item no encontrado'
-            ], 404);
+                'message' => 'Error al eliminar el item del carrito',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        if ($cartItem->carrito->estado !== 'activo') {
-            return response()->json([
-                'success' => false,
-                'message' => 'El carrito no está activo'
-            ], 400);
-        }
-
-        $cartItem->delete();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Producto eliminado del carrito exitosamente'
-        ]);
-    }
-
-    /**
-     * Vaciar el carrito
-     */
-    public function empty(int $cartId): JsonResponse
-    {
-        $cart = Cart::find($cartId);
-        if (!$cart) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Carrito no encontrado'
-            ], 404);
-        }
-
-        if ($cart->estado !== 'activo') {
-            return response()->json([
-                'success' => false,
-                'message' => 'El carrito no está activo'
-            ], 400);
-        }
-
-        $cart->vaciar();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Carrito vaciado exitosamente'
-        ]);
     }
 } 

@@ -13,8 +13,8 @@ class Cart extends Model
     public $timestamps = false;
 
     protected $fillable = [
-        'estado',
-        'usuarios_id_usuario'
+        'usuarios_id_usuario',
+        'estado'
     ];
 
     protected $casts = [
@@ -26,7 +26,7 @@ class Cart extends Model
         'updated_at'
     ];
 
-    protected $with = ['items.producto'];
+    protected $with = ['items'];
 
     public function usuario(): BelongsTo
     {
@@ -41,7 +41,7 @@ class Cart extends Model
     public function getTotal(): float
     {
         return $this->items->sum(function ($item) {
-            return $item->cantidad * $item->producto->precio;
+            return $item->getSubtotal();
         });
     }
 
