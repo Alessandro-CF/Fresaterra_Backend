@@ -22,9 +22,10 @@ class DatabaseSeeder extends Seeder
 
         $this->call(RolesSeeder::class);
         $this->call(UserSeeder::class);
+        $this->call(CategoriaSeeder::class);
         $this->call(MetodosPagoSeeder::class);
         $this->call(ProductosSeeder::class);
         $this->call(TransportistasSeeder::class);
-        $this->call(CategoriaSeeder::class);
+        
     }
 }
