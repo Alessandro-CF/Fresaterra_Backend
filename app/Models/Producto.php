@@ -71,4 +71,28 @@ class Producto extends Model
 	{
 		return $this->belongsTo(Categoria::class, 'categorias_id_categoria');
 	}
+
+	/**
+	 * Relación con comentarios - Un producto tiene muchos comentarios
+	 */
+	public function comentarios()
+	{
+		return $this->hasMany(Comentario::class, 'productos_id_producto', 'id_producto');
+	}
+
+	/**
+	 * Obtener el promedio de calificaciones
+	 */
+	public function getAverageRatingAttribute()
+	{
+		return $this->comentarios()->avg('calificacion') ?? 0;
+	}
+
+	/**
+	 * Obtener el total de reseñas
+	 */
+	public function getTotalReviewsAttribute()
+	{
+		return $this->comentarios()->count();
+	}
 }

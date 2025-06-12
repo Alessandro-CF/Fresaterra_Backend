@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\ProductController;
 use App\Http\Controllers\Api\V1\DireccionesController;
 use App\Http\Controllers\Api\V1\PagosController;
 use App\Http\Controllers\Api\V1\PedidoController;
+use App\Http\Controllers\Api\V1\ComentariosController;
 use App\Http\Controllers\Api\V1\Admin\ProductosController;
 use App\Http\Controllers\Api\V1\Admin\CategoriasController;
 use App\Http\Controllers\Api\V1\Admin\InventarioController;
@@ -24,6 +25,9 @@ Route::prefix('v1')->group(function () {
     
     // Productos públicos
     Route::get('products', [ProductController::class, 'index']);
+    
+    // Reviews públicas
+    Route::get('productos/{productId}/reviews', [ComentariosController::class, 'getProductReviews']);
 
     // * RUTAS PRIVADAS (Requieren autenticación JWT)
     Route::middleware('jwt.auth')->group(function () {
@@ -48,6 +52,14 @@ Route::prefix('v1')->group(function () {
             Route::patch('addresses/{id}', 'update');                  // Actualizar dirección parcial
             Route::delete('addresses/{id}', 'destroy');                // Eliminar dirección
             Route::patch('addresses/{id}/set-default', 'setAsDefault'); // Establecer como predeterminada
+        });
+        
+        // Gestión de reseñas del usuario
+        Route::controller(ComentariosController::class)->group(function () {
+            Route::post('reviews', 'store');                               // Crear nueva reseña
+            Route::put('reviews/{id}', 'update');                         // Actualizar reseña
+            Route::delete('reviews/{id}', 'destroy');                     // Eliminar reseña
+            Route::get('productos/{productId}/my-review', 'getUserReview'); // Obtener mi reseña para un producto
         });
         
         // Pagos (requiere autenticación)

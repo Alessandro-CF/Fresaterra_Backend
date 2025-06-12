@@ -17,7 +17,10 @@ return new class extends Migration
             $table->text('contenido')->nullable();
             $table->timestamp('fecha_creacion')->useCurrent();
             $table->unsignedBigInteger('usuarios_id_usuario');
+            $table->unsignedBigInteger('productos_id_producto'); // Add this line
             $table->foreign('usuarios_id_usuario')->references('id_usuario')->on('users');
+            $table->foreign('productos_id_producto')->references('id_producto')->on('productos'); // Add this line
+            $table->unique(['usuarios_id_usuario', 'productos_id_producto']);
             $table->timestamps();
         });
     }
