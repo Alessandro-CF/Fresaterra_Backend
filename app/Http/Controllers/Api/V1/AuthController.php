@@ -91,11 +91,19 @@ class AuthController extends Controller
             }
 
             // Obtener el usuario autenticado
-            $user = Auth::user();
+            $authenticatedUser = Auth::user();
+
+            // Obtener el usuario con la relación del rol usando el primaryKey correcto
+            $user = \App\Models\User::where('id_usuario', $authenticatedUser->id_usuario)->with('role')->first();
 
             return response()->json([
+                'success' => true,
+                'message' => 'Login exitoso',
                 'token' => $token,
-                'user' => $user
+                'user' => $user,
+                'access_token' => $token, // Algunos frontend esperan access_token
+                'token_type' => 'bearer',
+                'expires_in' => JWTAuth::factory()->getTTL() * 60
             ], 200);
 
         } catch (JWTException $e) {

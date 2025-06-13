@@ -72,6 +72,58 @@ class NotificacionController extends Controller
     }
 
     /**
+     * Obtener solo las notificaciones no leídas del usuario autenticado
+     * GET /api/v1/me/notificaciones/unread
+     */
+    public function getUnreadNotifications(Request $request)
+    {
+        try {
+            $user = Auth::user();
+            
+            $notifications = Notificacion::where('usuarios_id_usuario', $user->id_usuario)
+                ->whereNull('read_at')
+                ->with(['mensaje' => function ($query) {
+                    $query->select('id_mensaje', 'tipo', 'contenido', 'asunto');
+                }])
+                ->select('id_notificacion', 'estado', 'fecha_creacion', 'mensajes_id_mensaje', 'read_at', 'type', 'data')
+                ->orderBy('fecha_creacion', 'desc')
+                ->get();
+
+            // Formatear la respuesta
+            $formattedNotifications = $notifications->map(function ($notification) {
+                return [
+                    'id_notificacion' => $notification->id_notificacion,
+                    'estado' => 'no_leida',
+                    'fecha_creacion' => $notification->fecha_creacion->toISOString(),
+                    'read_at' => null,
+                    'type' => $notification->type,
+                    'data' => $notification->data,
+                    'mensaje' => $notification->mensaje ? [
+                        'id_mensaje' => $notification->mensaje->id_mensaje,
+                        'tipo' => $notification->mensaje->tipo,
+                        'contenido' => $notification->mensaje->contenido,
+                        'asunto' => $notification->mensaje->asunto,
+                    ] : null
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'count' => $formattedNotifications->count(),
+                'datos' => $formattedNotifications
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error al obtener notificaciones no leídas: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener notificaciones no leídas',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Marcar notificación como leída/no leída
      * PATCH /api/v1/me/notificaciones/{id_notificacion}
      */

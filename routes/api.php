@@ -20,14 +20,16 @@ Route::prefix('v1')->group(function () {
     //* PUBLIC ROUTES
     Route::post('register', [AuthController::class, 'register']);
     Route::post('login', [AuthController::class, 'login']);
+    // Ruta específica para el login de administradores
+    Route::post('admin/login', [AuthController::class, 'login']);
 
     Route::get('products', [ProductController::class, 'index']);
     
     // Servicios públicos para probar API
     Route::get('comments', [ComentarioController::class, 'index']);
     Route::get('comments/{id}', [ComentarioController::class, 'show']);
-    // Rutas públicas para verificar usuarios registrados (sin autenticación)
-    Route::get('users/registered', [NotificacionController::class, 'getRegisteredUsers']);
+
+   
 
     // * PRIVATE ROUTES
     // Para los usuarios autenticados
@@ -52,6 +54,7 @@ Route::prefix('v1')->group(function () {
     Route::middleware([IsUserAuth::class])->group(function () {
         Route::prefix('me/notificaciones')->group(function () {
             Route::get('/', [NotificacionController::class, 'getUserNotifications']);
+            Route::get('/unread', [NotificacionController::class, 'getUnreadNotifications']); // Ruta faltante
             Route::patch('/{id_notificacion}', [NotificacionController::class, 'updateUserNotificationStatus']);
             Route::delete('/{id_notificacion}', [NotificacionController::class, 'deleteUserNotification']);
         });
