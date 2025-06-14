@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\V1\ComentariosController;
 use App\Http\Controllers\Api\V1\Admin\ProductosController;
 use App\Http\Controllers\Api\V1\Admin\CategoriasController;
 use App\Http\Controllers\Api\V1\Admin\InventarioController;
+use App\Http\Controllers\Api\V1\CartController;
 
 Route::prefix('v1')->group(function () {
     
@@ -25,10 +26,13 @@ Route::prefix('v1')->group(function () {
     
     // Productos públicos
     Route::get('products', [ProductController::class, 'index']);
-    
-    // Reviews públicas
-    Route::get('productos/{productId}/reviews', [ComentariosController::class, 'getProductReviews']);
+    Route::get('productos', [ProductController::class, 'index']);
+    Route::post('productos', [ProductController::class, 'store']); // <-- MOVER AQUÍ
 
+    Route::get('productos/destacados', [ProductController::class, 'featured']);
+    Route::get('productos/{id}', [ProductController::class, 'show']);
+    Route::get('categorias', [ProductController::class, 'categories']);
+    
     // * RUTAS PRIVADAS (Requieren autenticación JWT)
     Route::middleware('jwt.auth')->group(function () {
         
@@ -160,4 +164,20 @@ Route::prefix('v1')->group(function () {
     // * WEBHOOKS (Sin autenticación)  
     Route::post('mercadopago/notifications', [MercadoPagoController::class, 'handleWebhook'])
         ->name('mercadopago.notifications');
+
+    // Rutas de carrito
+    Route::get('carritos/usuario/{userId}', [CartController::class, 'show']);
+    Route::post('carritos', [CartController::class, 'store']);
+    Route::post('carritos/{cartId}/items', [CartController::class, 'addItem']);
+    Route::put('carritos/items/{itemId}', [CartController::class, 'updateItem']);
+    Route::delete('carritos/items/{itemId}', [CartController::class, 'deleteItem']);
+    Route::patch('carritos/{cartId}', [CartController::class, 'empty']);
+
+    // Carrito de compras
+    Route::middleware('auth:api')->group(function () {
+        Route::get('cart', [CartController::class, 'index']);
+        Route::post('cart', [CartController::class, 'store']);
+        Route::put('cart/{id}', [CartController::class, 'update']);
+        Route::delete('cart/{id}', [CartController::class, 'destroy']);
+    });
 });
