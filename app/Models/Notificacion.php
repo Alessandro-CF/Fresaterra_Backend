@@ -10,7 +10,7 @@ use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Class Notificacione
+ * Class Notificacion
  * 
  * @property int $id_notificacion
  * @property string $estado

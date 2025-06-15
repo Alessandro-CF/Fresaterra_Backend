@@ -63,12 +63,12 @@ class User extends Authenticatable implements JWTSubject
     //* Métodos para relacionar con otros modelos
     public function role(): BelongsTo
     {
-        return $this->belongsTo(Role::class, 'roles_id_rol', 'id_rol');
+        return $this->belongsTo(Rol::class, 'roles_id_rol', 'id_rol'); // Changed Role to Rol
     }
 
     public function carritos(): HasMany
     {
-        return $this->hasMany(Cart::class, 'usuarios_id_usuario', 'id_usuario');
+        return $this->hasMany(Carrito::class, 'usuarios_id_usuario', 'id_usuario'); // Changed Cart to Carrito
     }
 
     public function carritoActivo()

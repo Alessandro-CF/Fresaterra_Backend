@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
-use App\Models\Product;
-use App\Models\Category;
+use App\Models\Producto;
+use App\Models\Categoria;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Storage;
@@ -18,12 +18,12 @@ class ProductController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $productos = Product::query()
+        $productos = Producto::query()
             ->activos()
-            ->when($request->has('categoria'), function($query) use ($request) {
+            ->when($request->has('categoria'), function ($query) use ($request) {
                 return $query->categoria($request->categoria);
             })
-            ->when($request->has('busqueda'), function($query) use ($request) {
+            ->when($request->has('busqueda'), function ($query) use ($request) {
                 return $query->buscar($request->busqueda);
             })
             ->orderBy('fecha_creacion', 'desc')
@@ -48,7 +48,7 @@ class ProductController extends Controller
      */
     public function show(int $id): JsonResponse
     {
-        $producto = Product::find($id);
+        $producto = Producto::find($id);
 
         if (!$producto) {
             return response()->json([
@@ -69,7 +69,7 @@ class ProductController extends Controller
      */
     public function featured(): JsonResponse
     {
-        $productos = Product::destacados()->get();
+        $productos = Producto::destacados()->get();
 
         if ($productos->isEmpty()) {
             return response()->json([
@@ -90,7 +90,7 @@ class ProductController extends Controller
      */
     public function categories(): JsonResponse
     {
-        $categorias = Category::all();
+        $categorias = Categoria::all();
 
         if ($categorias->isEmpty()) {
             return response()->json([
@@ -107,14 +107,6 @@ class ProductController extends Controller
     }
 
     /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
-    }
-
-    /**
      * Store a newly created resource in storage.
      */
     public function store(Request $request): JsonResponse
@@ -123,9 +115,9 @@ class ProductController extends Controller
             'nombre' => 'required|string|max:100',
             'descripcion' => 'required|string',
             'precio' => 'required|numeric|min:0',
-            'peso' => 'required|numeric|min:0',
+            'peso' => 'required|string|min:0',
             'categorias_id_categoria' => 'required|exists:categorias,id_categoria',
-            'imagen' => 'required|image|mimes:jpeg,png,jpg|max:2048'
+            'url_imagen' => 'required|image|mimes:jpeg,png,jpg|max:2048'
         ]);
 
         if ($validator->fails()) {
@@ -138,44 +130,48 @@ class ProductController extends Controller
 
         try {
             // Procesar y guardar la imagen
+            // Procesar y guardar la imagen
             $nombreImagen = null;
-            if ($request->hasFile('imagen')) {
-                $imagen = $request->file('imagen');
+            if ($request->hasFile('url_imagen')) {
+                $imagen = $request->file('url_imagen');
                 $nombreImagen = Str::uuid() . '.' . $imagen->getClientOriginalExtension();
-                
+
                 // Guardar la imagen en storage/app/public/productos
-                $imagen->storeAs('public/productos', $nombreImagen);
+                $imagen->storeAs('productos', $nombreImagen, 'public');
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'La imagen es obligatoria',
+                    'errors' => ['url_imagen' => ['El campo url_imagen es obligatorio']]
+                ], 422);
             }
 
             // Crear el producto
-            $producto = Product::create([
+            $producto = Producto::create([
                 'nombre' => $request->nombre,
                 'descripcion' => $request->descripcion,
                 'precio' => $request->precio,
                 'peso' => $request->peso,
-                'estado' => 'disponible',
+                'estado' => 'activo',
                 'categorias_id_categoria' => $request->categorias_id_categoria,
-                'url_imagen' => $nombreImagen ? 'productos/' . $nombreImagen : null,
+                'url_imagen' => 'productos/' . $nombreImagen,
                 'fecha_creacion' => now()
             ]);
 
-            // Generar URL completa de la imagen
-            $producto->url_imagen_completa = $producto->url_imagen ? url('storage/' . $producto->url_imagen) : null;
+            // Cargar la relación de categoría y forzar la generación de la URL de imagen
+            $producto->load('categoria');
 
             return response()->json([
                 'success' => true,
                 'message' => 'Producto creado exitosamente',
                 'data' => $producto
             ], 201);
-
         } catch (\Exception $e) {
             // Si algo sale mal, eliminar la imagen si se subió
             if (isset($nombreImagen)) {
                 Storage::delete('public/productos/' . $nombreImagen);
             }
 
-            \Log::error('Error al crear producto: ' . $e->getMessage());
-            
             return response()->json([
                 'success' => false,
                 'message' => 'Error al crear el producto',
@@ -185,25 +181,18 @@ class ProductController extends Controller
     }
 
     /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(Producto $product)
-    {
-        //
-    }
-
-    /**
      * Update the specified resource in storage.
      */
     public function update(Request $request, int $id): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'nombre' => 'string|max:100',
-            'descripcion' => 'string',
-            'precio' => 'numeric|min:0',
-            'peso' => 'numeric|min:0',
-            'categorias_id_categoria' => 'exists:categorias,id_categoria',
-            'imagen' => 'sometimes|image|mimes:jpeg,png,jpg|max:2048'
+            'nombre' => 'sometimes|required|string|max:100',
+            'descripcion' => 'sometimes|required|string',
+            'precio' => 'sometimes|required|numeric|min:0',
+            'peso' => 'sometimes|required|string',
+            'categorias_id_categoria' => 'sometimes|required|exists:categorias,id_categoria',
+            'estado' => 'sometimes|required|string|in:activo,inactivo',
+            'url_imagen' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048'
         ]);
 
         if ($validator->fails()) {
@@ -214,8 +203,10 @@ class ProductController extends Controller
             ], 422);
         }
 
+        $validatedData = $validator->validated();
+
         try {
-            $producto = Product::find($id);
+            $producto = Producto::find($id);
             if (!$producto) {
                 return response()->json([
                     'success' => false,
@@ -223,46 +214,64 @@ class ProductController extends Controller
                 ], 404);
             }
 
-            // Procesar y guardar la nueva imagen si se proporciona
-            if ($request->hasFile('imagen')) {
-                // Eliminar la imagen anterior si existe
-                if ($producto->url_imagen) {
-                    Storage::delete('public/' . $producto->url_imagen);
-                }
+            $originalUrlImagen = $producto->url_imagen;
+            $newImageNameForCleanup = null;
 
-                $imagen = $request->file('imagen');
+            if ($request->hasFile('url_imagen')) {
+                $imagen = $request->file('url_imagen');
                 $nombreImagen = Str::uuid() . '.' . $imagen->getClientOriginalExtension();
-                $imagen->storeAs('public/productos', $nombreImagen);
+                $imagen->storeAs('productos', $nombreImagen, 'public');
+                $newImageNameForCleanup = $nombreImagen;
                 $producto->url_imagen = 'productos/' . $nombreImagen;
+
+                if ($originalUrlImagen && $originalUrlImagen !== $producto->url_imagen && $originalUrlImagen !== ('productos/' . $nombreImagen)) {
+                    Storage::delete('public/' . $originalUrlImagen);
+                }
             }
 
-            // Actualizar otros campos si se proporcionan
-            if ($request->has('nombre')) $producto->nombre = $request->nombre;
-            if ($request->has('descripcion')) $producto->descripcion = $request->descripcion;
-            if ($request->has('precio')) $producto->precio = $request->precio;
-            if ($request->has('peso')) $producto->peso = $request->peso;
-            if ($request->has('categorias_id_categoria')) $producto->categorias_id_categoria = $request->categorias_id_categoria;
+            $attributesToFill = $validatedData;
+            if (array_key_exists('url_imagen', $attributesToFill)) {
+                unset($attributesToFill['url_imagen']);
+            }
 
-            $producto->save();
+            if (!empty($attributesToFill)) {
+                $producto->fill($attributesToFill);
+            }
 
-            // Generar URL completa de la imagen
-            $producto->url_imagen_completa = $producto->url_imagen ? Storage::url($producto->url_imagen) : null;
+            $cambiosDetectadosEnModelo = $producto->isDirty();
+
+            if ($cambiosDetectadosEnModelo) {
+                $producto->save();
+            }
+
+            $producto->load('categoria');
+            $producto->refresh();
+
+            $message = 'Producto procesado.';
+            $finalChangesPersisted = $producto->wasChanged() || ($request->hasFile('url_imagen') && $producto->url_imagen !== $originalUrlImagen);
+
+            if ($finalChangesPersisted) {
+                $message = 'Producto actualizado exitosamente.';
+            } else {
+                $message = 'Producto procesado sin cambios detectados.';
+            }
 
             return response()->json([
                 'success' => true,
-                'message' => 'Producto actualizado exitosamente',
-                'data' => $producto
+                'message' => $message,
+                'data' => $producto,
+                'cambios_realizados' => $finalChangesPersisted,
             ]);
-
         } catch (\Exception $e) {
-            // Si algo sale mal y se subió una nueva imagen, eliminarla
-            if (isset($nombreImagen)) {
-                Storage::delete('public/productos/' . $nombreImagen);
+            if ($newImageNameForCleanup && $request->hasFile('url_imagen')) {
+                if ($producto->url_imagen === ('productos/' . $newImageNameForCleanup) && $originalUrlImagen !== ('productos/' . $newImageNameForCleanup)) {
+                    Storage::delete('public/productos/' . $newImageNameForCleanup);
+                }
             }
 
             return response()->json([
                 'success' => false,
-                'message' => 'Error al actualizar el producto',
+                'message' => 'Error al actualizar el producto.',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -271,19 +280,50 @@ class ProductController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy($id)
+    public function destroy(int $id): JsonResponse
     {
-        $product = Producto::find($id);
-        if(!$product) {
+        try {
+            $producto = Producto::find($id);
+
+            if (!$producto) {
                 return response()->json([
-                'message' => 'Producto no encontrado'],
-                404
-            );
+                    'success' => false,
+                    'message' => 'Producto no encontrado'
+                ], 404);
+            }
+
+            // Eliminar la imagen asociada si existe
+            if ($producto->url_imagen) {
+                Storage::delete('public/' . $producto->url_imagen);
+            }
+
+            // Verificar si hay relaciones que impidan eliminación
+            if ($producto->carrito_items()->count() > 0 || $producto->pedido_items()->count() > 0) {
+                // En lugar de eliminar, marcar como inactivo
+                $producto->estado = 'inactivo';
+                $producto->save();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Producto marcado como inactivo porque está siendo utilizado',
+                    'data' => $producto
+                ]);
+            }
+
+            // Si no hay relaciones, eliminar completamente
+            $producto->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Producto eliminado exitosamente'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al eliminar el producto',
+                'error' => $e->getMessage()
+            ], 500);
         }
-        $product->delete();
-        return response()->json([
-            'message' => 'Producto eliminado correctamente'
-        ], 200
-        );
     }
+
 }

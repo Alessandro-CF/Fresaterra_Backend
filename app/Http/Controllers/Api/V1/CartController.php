@@ -3,13 +3,19 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
-use App\Models\Cart;
-use App\Models\CartItem;
-use App\Models\Product;
+use App\Models\Carrito;
+use App\Models\CarritoItems;
+use App\Models\Producto;
+use App\Models\Pedido;
+use App\Models\PedidoItems;
+use App\Models\Pago;
+use App\Models\Envio;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class CartController extends Controller
 {
@@ -19,14 +25,15 @@ class CartController extends Controller
     public function index(): JsonResponse
     {
         try {
-            $cart = Cart::where('usuarios_id_usuario', Auth::id())
+            $cart = Carrito::where('usuarios_id_usuario', Auth::id())
                        ->where('estado', 'activo')
                        ->first();
 
             if (!$cart) {
-                $cart = Cart::create([
+                $cart = Carrito::create([
                     'usuarios_id_usuario' => Auth::id(),
-                    'estado' => 'activo'
+                    'estado' => 'activo',
+                    'fecha_creacion' => now()
                 ]);
             }
 
@@ -68,16 +75,19 @@ class CartController extends Controller
 
         try {
             // Obtener o crear el carrito activo del usuario
-            $cart = Cart::firstOrCreate(
+            $cart = Carrito::firstOrCreate(
                 [
                     'usuarios_id_usuario' => Auth::id(),
                     'estado' => 'activo'
+                ],
+                [
+                    'fecha_creacion' => now()
                 ]
             );
 
             // Verificar si el producto existe y está disponible
-            $producto = Product::find($request->producto_id);
-            if (!$producto || $producto->estado !== 'disponible') {
+            $producto = Producto::find($request->producto_id);
+            if (!$producto || $producto->estado !== 'activo') {
                 return response()->json([
                     'success' => false,
                     'message' => 'El producto no está disponible'
@@ -85,7 +95,7 @@ class CartController extends Controller
             }
 
             // Buscar si el producto ya está en el carrito
-            $cartItem = CartItem::where('carritos_id_carrito', $cart->id_carrito)
+            $cartItem = CarritoItems::where('carritos_id_carrito', $cart->id_carrito)
                               ->where('productos_id_producto', $request->producto_id)
                               ->first();
 
@@ -95,7 +105,7 @@ class CartController extends Controller
                 $cartItem->save();
             } else {
                 // Crear nuevo item si no existe
-                $cartItem = CartItem::create([
+                $cartItem = CarritoItems::create([
                     'carritos_id_carrito' => $cart->id_carrito,
                     'productos_id_producto' => $request->producto_id,
                     'cantidad' => $request->cantidad
@@ -141,10 +151,10 @@ class CartController extends Controller
         }
 
         try {
-            $cartItem = CartItem::findOrFail($id);
+            $cartItem = CarritoItems::findOrFail($id);
             
             // Verificar que el item pertenece al carrito del usuario
-            $cart = Cart::where('id_carrito', $cartItem->carritos_id_carrito)
+            $cart = Carrito::where('id_carrito', $cartItem->carritos_id_carrito)
                        ->where('usuarios_id_usuario', Auth::id())
                        ->where('estado', 'activo')
                        ->firstOrFail();
@@ -185,10 +195,10 @@ class CartController extends Controller
     public function destroy(int $id): JsonResponse
     {
         try {
-            $cartItem = CartItem::findOrFail($id);
+            $cartItem = CarritoItems::findOrFail($id);
             
             // Verificar que el item pertenece al carrito del usuario
-            $cart = Cart::where('id_carrito', $cartItem->carritos_id_carrito)
+            $cart = Carrito::where('id_carrito', $cartItem->carritos_id_carrito)
                        ->where('usuarios_id_usuario', Auth::id())
                        ->where('estado', 'activo')
                        ->firstOrFail();
@@ -215,4 +225,249 @@ class CartController extends Controller
             ], 500);
         }
     }
-} 
+
+    /**
+     * Convertir carrito a pedido (checkout)
+     */
+    public function checkout(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'shipping_info' => 'required|array',
+            'shipping_info.firstName' => 'required|string|max:100',
+            'shipping_info.lastName' => 'required|string|max:100',
+            'shipping_info.email' => 'required|email',
+            'shipping_info.phone' => 'required|string|max:20',
+            'shipping_info.address' => 'required|string|max:255',
+            'shipping_info.city' => 'required|string|max:100',
+            'shipping_info.postalCode' => 'required|string|max:10',
+            'shipping_cost' => 'nullable|numeric|min:0',
+            'address_info' => 'required|array',
+            'address_info.type' => 'required|in:profile,new,select',
+            'address_info.address_id' => 'required_if:address_info.type,profile,select|integer|exists:direcciones,id_direccion'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error de validación',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            // Obtener carrito activo del usuario
+            $cart = Carrito::where('usuarios_id_usuario', Auth::id())
+                          ->where('estado', 'activo')
+                          ->with('items.producto')
+                          ->first();
+
+            if (!$cart || $cart->items->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'El carrito está vacío'
+                ], 400);
+            }
+
+            // Validar que todos los productos estén disponibles
+            foreach ($cart->items as $item) {
+                if (!$item->producto || $item->producto->estado !== 'activo') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "El producto '{$item->producto->nombre}' ya no está disponible"
+                    ], 400);
+                }
+            }
+
+            DB::beginTransaction();
+
+            try {
+                // Calcular total
+                $montoTotal = $cart->getTotal();
+
+                // Crear el pedido
+                $pedido = Pedido::create([
+                    'monto_total' => $montoTotal,
+                    'estado' => 'pendiente',
+                    'fecha_creacion' => now(),
+                    'usuarios_id_usuario' => Auth::id()
+                ]);
+
+                // Transferir items del carrito al pedido
+                foreach ($cart->items as $item) {
+                    PedidoItems::create([
+                        'cantidad' => $item->cantidad,
+                        'precio' => $item->producto->precio,
+                        'subtotal' => $item->cantidad * $item->producto->precio,
+                        'pedidos_id_pedido' => $pedido->id_pedido,
+                        'productos_id_producto' => $item->productos_id_producto
+                    ]);
+                }
+
+                // Crear registro de pago inicial
+                $pago = Pago::create([
+                    'monto_pago' => $montoTotal,
+                    'estado_pago' => 'pendiente',
+                    'fecha_pago' => now(),
+                    'metodos_pago_id_metodo_pago' => 1, // Mercado Pago por defecto
+                    'pedidos_id_pedido' => $pedido->id_pedido,
+                    'referencia_pago' => 'PENDING_' . $pedido->id_pedido . '_' . time()
+                ]);
+
+                // Crear registro de envío
+                $shippingCost = $request->shipping_cost ?? $this->calculateShippingCost($cart);
+                $addressId = $request->address_info['address_id'] ?? null;
+                
+                $this->createShippingRecord($pedido, $shippingCost, $addressId);
+
+                // Vaciar el carrito después de crear el pedido
+                $cart->items()->delete();
+                $cart->update(['estado' => 'completado']);
+
+                DB::commit();
+
+                // Cargar relaciones para la respuesta
+                $pedido->load(['pedido_items.producto', 'usuario', 'pagos', 'envios']);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Pedido creado exitosamente desde el carrito',
+                    'data' => [
+                        'order' => $pedido,
+                        'order_id' => $pedido->id_pedido,
+                        'payment' => $pago
+                    ]
+                ], 201);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
+            }
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al crear el pedido desde el carrito',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Crear registro de envío desde carrito
+     */
+    private function createShippingRecord(Pedido $pedido, float $shippingCost, ?int $addressId): void
+    {
+        try {
+            // Asignar transportista usando rotación
+            $transportistaId = $this->assignTransporter();
+            
+            $envio = Envio::create([
+                'monto_envio' => $shippingCost,
+                'estado' => 'pendiente',
+                'fecha_envio' => now()->addDay(),
+                'transportistas_id_transportista' => $transportistaId,
+                'pedidos_id_pedido' => $pedido->id_pedido,
+                'direcciones_id_direccion' => $addressId
+            ]);
+
+            // Log del envío creado
+            Log::info('Envío creado desde carrito', [
+                'pedido_id' => $pedido->id_pedido,
+                'envio_id' => $envio->id_envio,
+                'transportista_id' => $transportistaId,
+                'monto_envio' => $shippingCost,
+                'direccion_id' => $addressId
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error al crear registro de envío desde carrito', [
+                'pedido_id' => $pedido->id_pedido,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            // No lanzamos la excepción para que no falle el proceso de checkout
+        }
+    }
+
+    /**
+     * Calcular costo de envío desde el carrito con manejo de excepciones
+     */
+    private function calculateShippingCost(Carrito $cart): float
+    {
+        try {
+            $strawberrySubtotal = 0;
+            
+            foreach ($cart->items as $item) {
+                if ($item->producto && $item->producto->categorias_id_categoria == 1) {
+                    $strawberrySubtotal += $item->getSubtotal();
+                }
+            }
+            
+            // Envío gratis si subtotal de fresas >= $30
+            return $strawberrySubtotal >= 30.00 ? 0.00 : 5.99;
+            
+        } catch (\Exception $e) {
+            Log::error('Error calculando costo de envío desde carrito', [
+                'carrito_id' => $cart->id_carrito,
+                'error' => $e->getMessage()
+            ]);
+            
+            // Fallback: costo fijo en caso de error
+            return 5.99;
+        }
+    }
+
+    /**
+     * Asignar transportista con rotación simple
+     */
+    private function assignTransporter(): int
+    {
+        try {
+            // Obtener todos los transportistas disponibles
+            $transportistas = DB::table('transportistas')->pluck('id_transportista')->toArray();
+            
+            if (empty($transportistas)) {
+                Log::warning('No se encontraron transportistas, usando ID 1 por defecto');
+                return 1;
+            }
+            
+            // Obtener el último envío para ver cuál transportista fue asignado
+            $ultimoEnvio = Envio::latest('id_envio')->first();
+            
+            if (!$ultimoEnvio) {
+                // Si es el primer envío, usar el primer transportista
+                Log::info('Primer envío, asignando transportista ID: ' . $transportistas[0]);
+                return $transportistas[0];
+            }
+            
+            // Encontrar el índice del último transportista usado
+            $ultimoTransportistaIndex = array_search($ultimoEnvio->transportistas_id_transportista, $transportistas);
+            
+            // Si no se encuentra el transportista anterior, empezar desde el primero
+            if ($ultimoTransportistaIndex === false) {
+                Log::warning('Transportista anterior no encontrado, reiniciando rotación');
+                return $transportistas[0];
+            }
+            
+            // Asignar el siguiente transportista (rotación)
+            $siguienteIndex = ($ultimoTransportistaIndex + 1) % count($transportistas);
+            $siguienteTransportista = $transportistas[$siguienteIndex];
+            
+            Log::info('Rotación de transportistas', [
+                'anterior_transportista' => $ultimoEnvio->transportistas_id_transportista,
+                'nuevo_transportista' => $siguienteTransportista,
+                'total_transportistas' => count($transportistas)
+            ]);
+            
+            return $siguienteTransportista;
+            
+        } catch (\Exception $e) {
+            Log::error('Error en rotación de transportistas', [
+                'error' => $e->getMessage()
+            ]);
+            
+            // Fallback: usar ID 1 por defecto
+            return 1;
+        }
+    }
+}

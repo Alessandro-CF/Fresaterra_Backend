@@ -9,6 +9,9 @@ namespace App\Models;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo; // Added
+use Illuminate\Database\Eloquent\Relations\HasMany;   // Added
+use Illuminate\Support\Facades\Storage;             // Added
 
 /**
  * Class Producto
@@ -16,15 +19,19 @@ use Illuminate\Database\Eloquent\Model;
  * @property int $id_producto
  * @property string $nombre
  * @property string $descripcion
- * @property float $precio
+ * @property float $precio // Will be cast to decimal:2
  * @property string $url_imagen
  * @property string $estado
  * @property string $peso
  * @property Carbon $fecha_creacion
+ * @property int $categorias_id_categoria // Added from Product.php fillable, ensure it's in $fillable
  * 
- * @property Collection|CarritoItem[] $carrito_items
+ * @property Categoria $categoria // Changed Category to Categoria
+ * @property Collection|CarritoItems[] $carrito_items // Changed from CarritoItem to CarritoItems
  * @property Collection|Inventario[] $inventarios
- * @property Collection|PedidoItem[] $pedido_items
+ * @property Collection|PedidoItems[] $pedido_items // Changed from PedidoItem to PedidoItems
+ * @property Collection|Comentario[] $comentarios
+ * @property-read string|null $url_imagen_completa // Added for accessor
  *
  * @package App\Models
  */
@@ -32,11 +39,19 @@ class Producto extends Model
 {
 	protected $table = 'productos';
 	protected $primaryKey = 'id_producto';
+	public $timestamps = true; // Enable timestamps to track changes
 
 	protected $casts = [
-		'precio' => 'float',
-		'fecha_creacion' => 'datetime'
+		'precio' => 'decimal:2', // Changed from float to decimal:2
+		'fecha_creacion' => 'datetime',
+		'categorias_id_categoria' => 'int', // Ensure this is cast if it's an ID
+        'peso' => 'string'
 	];
+    
+    // Definir campos que deben tratarse como atributos
+    protected $attributes = [
+        'estado' => 'activo', // Valor predeterminado para 'estado'
+    ];
 
 	protected $fillable = [
 		'nombre',
@@ -46,44 +61,57 @@ class Producto extends Model
 		'estado',
 		'peso',
 		'fecha_creacion',
-		'categorias_id_categoria'
+		'categorias_id_categoria' // Ensured from Product.php
 	];
 
-	public function carrito_items()
+    protected $appends = ['url_imagen_completa']; // Added from Product.php
+
+    // Don't hide timestamps anymore - we want to track them
+    protected $hidden = [];
+    
+    // Define custom column names for timestamps if needed
+    const CREATED_AT = 'created_at';
+    const UPDATED_AT = 'updated_at';
+
+    protected $with = ['categoria']; // Added from Product.php
+
+	// Relationships from Producto.php (adapted)
+	public function carrito_items(): HasMany // Kept original name, ensured CarritoItems
 	{
-		return $this->hasMany(CarritoItems::class, 'productos_id_producto');
+		return $this->hasMany(CarritoItems::class, 'productos_id_producto', 'id_producto');
 	}
 
-	public function inventarios()
+	public function inventarios(): HasMany
 	{
-		return $this->hasMany(Inventario::class, 'productos_id_producto');
+		return $this->hasMany(Inventario::class, 'productos_id_producto', 'id_producto');
 	}
 
-	public function pedido_items()
+	public function pedido_items(): HasMany
 	{
-		return $this->hasMany(PedidoItems::class, 'productos_id_producto');
+		return $this->hasMany(PedidoItems::class, 'productos_id_producto', 'id_producto');
 	}
 
 	/**
 	 * Relación con categoría - Un producto pertenece a una categoría
 	 */
-	public function categoria()
+	public function categoria(): BelongsTo // Adapted from Product.php to use Category
 	{
-		return $this->belongsTo(Categoria::class, 'categorias_id_categoria');
+		return $this->belongsTo(Categoria::class, 'categorias_id_categoria', 'id_categoria'); // Changed Category to Categoria
 	}
 
 	/**
 	 * Relación con comentarios - Un producto tiene muchos comentarios
 	 */
-	public function comentarios()
+	public function comentarios(): HasMany
 	{
 		return $this->hasMany(Comentario::class, 'productos_id_producto', 'id_producto');
 	}
 
+	// Accessors from Producto.php
 	/**
 	 * Obtener el promedio de calificaciones
 	 */
-	public function getAverageRatingAttribute()
+	public function getAverageRatingAttribute(): float
 	{
 		return $this->comentarios()->avg('calificacion') ?? 0;
 	}
@@ -91,8 +119,59 @@ class Producto extends Model
 	/**
 	 * Obtener el total de reseñas
 	 */
-	public function getTotalReviewsAttribute()
+	public function getTotalReviewsAttribute(): int
 	{
 		return $this->comentarios()->count();
 	}
+
+    // Accessor from Product.php
+    public function getUrlImagenCompletaAttribute(): ?string
+    {
+        return $this->url_imagen ? Storage::url($this->url_imagen) : null;
+    }
+
+    // Scopes from Product.php
+    public function scopeActivos($query)
+    {
+        return $query->where('estado', 'activo'); // Assuming 'activo' is the active state
+    }
+
+    public function scopeBuscar($query, $texto)
+    {
+        if ($texto) {
+            return $query->where(function($q) use ($texto) {
+                $q->where('nombre', 'LIKE', "%{$texto}%")
+                  ->orWhere('descripcion', 'LIKE', "%{$texto}%");
+            });
+        }
+        return $query;
+    }
+
+    public function scopeCategoria($query, $categoriaId)
+    {
+        if ($categoriaId) {
+            return $query->where('categorias_id_categoria', $categoriaId);
+        }
+        return $query;
+    }
+
+    public function scopeDestacados($query)
+    {
+        // Ensure 'activos' scope is defined or use where('estado', 'disponible') directly
+        return $query->activos()->inRandomOrder()->take(6);
+    }
+
+    /**
+     * Boot method to set default fecha_creacion if not present
+     */
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($producto) {
+            if (empty($producto->fecha_creacion)) {
+                $producto->fecha_creacion = now();
+            }
+        });
+    }
 }

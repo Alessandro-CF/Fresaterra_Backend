@@ -7,8 +7,9 @@
 namespace App\Models;
 
 use Carbon\Carbon;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * Class Carrito
@@ -18,8 +19,8 @@ use Illuminate\Database\Eloquent\Model;
  * @property Carbon $fecha_creacion
  * @property int $usuarios_id_usuario
  * 
- * @property Usuario $usuario
- * @property Collection|CarritoItem[] $carrito_items
+ * @property User $usuario
+ * @property \Illuminate\Database\Eloquent\Collection|CartItem[] $items
  *
  * @package App\Models
  */
@@ -27,6 +28,7 @@ class Carrito extends Model
 {
 	protected $table = 'carritos';
 	protected $primaryKey = 'id_carrito';
+	public $timestamps = false;
 
 	protected $casts = [
 		'fecha_creacion' => 'datetime',
@@ -34,18 +36,43 @@ class Carrito extends Model
 	];
 
 	protected $fillable = [
-		'estado',
-		'fecha_creacion',
-		'usuarios_id_usuario'
+		'usuarios_id_usuario',
+		'estado'
 	];
 
-	public function usuario()
+    protected $hidden = [
+        'created_at',
+        'updated_at'
+    ];
+
+    protected $with = ['items'];
+
+	public function usuario(): BelongsTo
 	{
-		return $this->belongsTo(User::class, 'usuarios_id_usuario');
+		return $this->belongsTo(User::class, 'usuarios_id_usuario', 'id_usuario');
 	}
 
-	public function carrito_items()
+	public function items(): HasMany
 	{
-		return $this->hasMany(CarritoItems::class, 'carritos_id_carrito');
+		return $this->hasMany(CarritoItems::class, 'carritos_id_carrito', 'id_carrito');
 	}
+
+    public function getTotal(): float
+    {
+        return $this->items->sum(function ($item) {
+            return $item->getSubtotal();
+        });
+    }
+
+    public function vaciar(): void
+    {
+        $this->items()->delete();
+        $this->estado = 'vacio';
+        $this->save();
+    }
+
+    public function scopeActivo($query)
+    {
+        return $query->where('estado', 'activo');
+    }
 }

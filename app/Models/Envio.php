@@ -22,7 +22,7 @@ use Illuminate\Database\Eloquent\Model;
  * 
  * @property Pedido $pedido
  * @property Transportista $transportista
- * @property Collection|Direccione[] $direcciones
+ * @property Collection|Direccion[] $direcciones
  *
  * @package App\Models
  */

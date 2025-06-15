@@ -24,17 +24,22 @@ Route::prefix('v1')->group(function () {
         Route::post('password/email', 'sendPasswordResetEmail');
     });
     
-    // Productos públicos
+    // Productos públicos (ESTANDARIZADAS EN INGLÉS)
     Route::get('products', [ProductController::class, 'index']);
-    Route::get('productos', [ProductController::class, 'index']);
-    Route::post('productos', [ProductController::class, 'store']); // <-- MOVER AQUÍ
-
-    Route::get('productos/destacados', [ProductController::class, 'featured']);
-    Route::get('productos/{id}', [ProductController::class, 'show']);
-    Route::get('categorias', [ProductController::class, 'categories']);
+    Route::get('products/featured', [ProductController::class, 'featured']);
+    Route::get('products/{id}', [ProductController::class, 'show']);
+    Route::get('categories', [ProductController::class, 'categories']);
     
+    // Reviews públicas
+    Route::get('products/{productId}/reviews', [ComentariosController::class, 'getProductReviews']);
+
     // * RUTAS PRIVADAS (Requieren autenticación JWT)
     Route::middleware('jwt.auth')->group(function () {
+        
+        // Gestión de productos (REQUIERE AUTENTICACIÓN)
+        Route::post('products', [ProductController::class, 'store']);
+        Route::put('products/{id}', [ProductController::class, 'update']);
+        Route::delete('products/{id}', [ProductController::class, 'destroy']);
         
         // Gestión de cuenta del usuario
         Route::controller(AuthController::class)->group(function () {
@@ -63,7 +68,16 @@ Route::prefix('v1')->group(function () {
             Route::post('reviews', 'store');                               // Crear nueva reseña
             Route::put('reviews/{id}', 'update');                         // Actualizar reseña
             Route::delete('reviews/{id}', 'destroy');                     // Eliminar reseña
-            Route::get('productos/{productId}/my-review', 'getUserReview'); // Obtener mi reseña para un producto
+            Route::get('products/{productId}/my-review', 'getUserReview'); // Obtener mi reseña para un producto
+        });
+        
+        // Gestión del carrito
+        Route::controller(CartController::class)->prefix('cart')->group(function () {
+            Route::get('/', 'index');           // Obtener carrito actual
+            Route::post('/', 'store');          // Agregar producto al carrito
+            Route::put('/{id}', 'update');      // Actualizar cantidad
+            Route::delete('/{id}', 'destroy');  // Eliminar item del carrito
+            Route::post('/checkout', 'checkout'); // Convertir carrito a pedido
         });
         
         // Pagos (requiere autenticación)
@@ -78,6 +92,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/{id}', 'show');                        // Detalles de pago específico
             Route::patch('/{id}/status', 'updateStatus');       // Actualizar estado de pago
             Route::post('success', 'handlePaymentSuccess');     // Confirmar pago exitoso al regresar de MP
+            Route::post('update-status-from-mp', 'updateStatusFromMercadoPago'); // Actualizar estado desde MP
         });
         
         // Gestión de pedidos del usuario
@@ -165,19 +180,7 @@ Route::prefix('v1')->group(function () {
     Route::post('mercadopago/notifications', [MercadoPagoController::class, 'handleWebhook'])
         ->name('mercadopago.notifications');
 
-    // Rutas de carrito
-    Route::get('carritos/usuario/{userId}', [CartController::class, 'show']);
-    Route::post('carritos', [CartController::class, 'store']);
-    Route::post('carritos/{cartId}/items', [CartController::class, 'addItem']);
-    Route::put('carritos/items/{itemId}', [CartController::class, 'updateItem']);
-    Route::delete('carritos/items/{itemId}', [CartController::class, 'deleteItem']);
-    Route::patch('carritos/{cartId}', [CartController::class, 'empty']);
-
-    // Carrito de compras
-    Route::middleware('auth:api')->group(function () {
-        Route::get('cart', [CartController::class, 'index']);
-        Route::post('cart', [CartController::class, 'store']);
-        Route::put('cart/{id}', [CartController::class, 'update']);
-        Route::delete('cart/{id}', [CartController::class, 'destroy']);
-    });
+    // NOTA: Las rutas de carrito están ya definidas arriba dentro del grupo 'middleware jwt.auth'
+    // Las rutas duplicadas a continuación están en proceso de deprecación
+    // y deberían utilizar las rutas estandarizadas en inglés definidas arriba
 });
