@@ -24,6 +24,7 @@ class NotificacionController extends Controller
             $user = Auth::user();
             
             $query = Notificacion::where('usuarios_id_usuario', $user->id_usuario)
+                ->where('type', 'campanita') // Solo mostrar notificaciones de campanita
                 ->with(['mensaje' => function ($query) {
                     $query->select('id_mensaje', 'tipo', 'contenido', 'asunto');
                 }])
@@ -82,6 +83,7 @@ class NotificacionController extends Controller
             
             $notifications = Notificacion::where('usuarios_id_usuario', $user->id_usuario)
                 ->whereNull('read_at')
+                ->where('type', 'campanita') // Solo mostrar notificaciones de campanita
                 ->with(['mensaje' => function ($query) {
                     $query->select('id_mensaje', 'tipo', 'contenido', 'asunto');
                 }])
@@ -1310,6 +1312,35 @@ class NotificacionController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error al eliminar la notificación: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Limpiar notificaciones de email (temporal)
+     * DELETE /api/v1/me/notificaciones/clean-email
+     */
+    public function cleanEmailNotifications(Request $request)
+    {
+        try {
+            $user = Auth::user();
+            
+            // Eliminar todas las notificaciones de tipo email del usuario
+            $deletedCount = Notificacion::where('usuarios_id_usuario', $user->id_usuario)
+                ->where('type', 'email')
+                ->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => "Se eliminaron {$deletedCount} notificaciones de email",
+                'deleted_count' => $deletedCount
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error al limpiar notificaciones de email: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al limpiar notificaciones de email: ' . $e->getMessage()
             ], 500);
         }
     }

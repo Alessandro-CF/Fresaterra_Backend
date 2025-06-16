@@ -55,6 +55,7 @@ Route::prefix('v1')->group(function () {
         Route::prefix('me/notificaciones')->group(function () {
             Route::get('/', [NotificacionController::class, 'getUserNotifications']);
             Route::get('/unread', [NotificacionController::class, 'getUnreadNotifications']); // Ruta faltante
+            Route::delete('/clean-email', [NotificacionController::class, 'cleanEmailNotifications']); // Nueva ruta
             Route::patch('/{id_notificacion}', [NotificacionController::class, 'updateUserNotificationStatus']);
             Route::delete('/{id_notificacion}', [NotificacionController::class, 'deleteUserNotification']);
         });

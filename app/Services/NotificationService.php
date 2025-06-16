@@ -10,12 +10,17 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
 
 class NotificationService
-{
-    /**
-     * Enviar notificación por email
+{    /**
+     * Enviar notificación por email - DESHABILITADO
+     * Para evitar notificaciones duplicadas, solo usar campanita
      */
     public static function enviarEmail($userId, $asunto, $contenido, $datos = [])
     {
+        // Redirigir a campanita en lugar de crear email
+        Log::info('Redirecting email notification to campanita for user: ' . $userId);
+        return self::enviarCampanita($userId, $asunto, $contenido, $datos);
+        
+        /* CÓDIGO ORIGINAL COMENTADO
         try {
             // Crear el mensaje
             $mensaje = Mensaje::create([
@@ -47,14 +52,27 @@ class NotificationService
             Log::error('Error enviando email: ' . $e->getMessage());
             throw $e;
         }
-    }
-
-    /**
+        */
+    }    /**
      * Enviar notificación campanita (en app)
      */
     public static function enviarCampanita($userId, $asunto, $contenido, $datos = [])
     {
         try {
+            // Verificar si ya existe una notificación similar reciente (últimas 2 horas)
+            $notificacionExistente = Notificacion::where('usuarios_id_usuario', $userId)
+                ->where('type', 'campanita')
+                ->whereHas('mensaje', function($query) use ($contenido) {
+                    $query->where('contenido', $contenido);
+                })
+                ->where('fecha_creacion', '>=', now()->subHours(2))
+                ->first();
+
+            if ($notificacionExistente) {
+                Log::info('Notificación campanita duplicada evitada para usuario: ' . $userId);
+                return $notificacionExistente;
+            }
+
             // Crear el mensaje
             $mensaje = Mensaje::create([
                 'tipo' => 'campanita',
