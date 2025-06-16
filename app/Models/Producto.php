@@ -127,7 +127,7 @@ class Producto extends Model
     // Accessor from Product.php
     public function getUrlImagenCompletaAttribute(): ?string
     {
-        return $this->url_imagen ? Storage::url($this->url_imagen) : null;
+        return $this->url_imagen ? url(Storage::url($this->url_imagen)) : null;
     }
 
     // Scopes from Product.php
@@ -157,8 +157,14 @@ class Producto extends Model
 
     public function scopeDestacados($query)
     {
-        // Ensure 'activos' scope is defined or use where('estado', 'disponible') directly
-        return $query->activos()->inRandomOrder()->take(6);
+        return $query->activos()
+            ->withAvg('comentarios', 'calificacion')
+            ->withCount('comentarios')
+            ->havingRaw('comentarios_avg_calificacion >= 4.0 OR comentarios_count = 0')
+            ->orderByRaw('COALESCE(comentarios_avg_calificacion, 0) DESC')
+            ->orderBy('comentarios_count', 'desc')
+            ->orderBy('fecha_creacion', 'desc')
+            ->take(4);
     }
 
     /**

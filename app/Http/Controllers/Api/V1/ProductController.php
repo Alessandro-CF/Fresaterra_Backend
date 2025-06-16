@@ -18,28 +18,85 @@ class ProductController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $productos = Producto::query()
+        $query = Producto::query()
             ->activos()
-            ->when($request->has('categoria'), function ($query) use ($request) {
-                return $query->categoria($request->categoria);
-            })
-            ->when($request->has('busqueda'), function ($query) use ($request) {
-                return $query->buscar($request->busqueda);
-            })
-            ->orderBy('fecha_creacion', 'desc')
-            ->paginate(12);
+            ->withAvg('comentarios', 'calificacion')
+            ->withCount('comentarios');
 
-        if ($productos->isEmpty()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'No se encontraron productos'
-            ], 404);
+        // Filtro por categoría
+        if ($request->has('categoria') && $request->categoria) {
+            $query->categoria($request->categoria);
         }
+
+        // Filtro por búsqueda
+        if ($request->has('busqueda') && $request->busqueda) {
+            $query->buscar($request->busqueda);
+        }
+
+        // Filtro por rango de precios
+        if ($request->has('precio_min') && $request->precio_min) {
+            $query->where('precio', '>=', $request->precio_min);
+        }
+        if ($request->has('precio_max') && $request->precio_max) {
+            $query->where('precio', '<=', $request->precio_max);
+        }
+
+        // Filtro por rating mínimo
+        if ($request->has('rating_min') && $request->rating_min) {
+            $query->having('comentarios_avg_calificacion', '>=', $request->rating_min);
+        }
+
+        // Filtro por productos con stock
+        if ($request->has('solo_disponibles') && $request->solo_disponibles == 'true') {
+            $query->where('estado', 'activo');
+        }
+
+        // Ordenamiento
+        $sortBy = $request->get('ordenar', 'fecha_creacion');
+        $sortOrder = $request->get('direccion', 'desc');
+
+        switch ($sortBy) {
+            case 'precio':
+                $query->orderBy('precio', $sortOrder);
+                break;
+            case 'nombre':
+                $query->orderBy('nombre', $sortOrder);
+                break;
+            case 'rating':
+                $query->orderByRaw('COALESCE(comentarios_avg_calificacion, 0) ' . $sortOrder);
+                break;
+            case 'popularidad':
+                $query->orderBy('comentarios_count', 'desc')
+                      ->orderByRaw('COALESCE(comentarios_avg_calificacion, 0) DESC');
+                break;
+            case 'relevancia':
+                // Primero productos destacados, luego por rating y popularidad
+                $query->orderByRaw('(CASE WHEN comentarios_avg_calificacion >= 4.0 OR comentarios_count = 0 THEN 1 ELSE 0 END) DESC')
+                      ->orderByRaw('COALESCE(comentarios_avg_calificacion, 0) DESC')
+                      ->orderBy('comentarios_count', 'desc');
+                break;
+            default:
+                $query->orderBy('fecha_creacion', $sortOrder);
+                break;
+        }
+
+        // Paginación
+        $perPage = min($request->get('por_pagina', 12), 50); // Máximo 50 productos por página
+        $productos = $query->paginate($perPage);
 
         return response()->json([
             'success' => true,
             'message' => 'Productos recuperados exitosamente',
-            'data' => $productos
+            'data' => $productos,
+            'filtros_aplicados' => [
+                'categoria' => $request->categoria,
+                'busqueda' => $request->busqueda,
+                'precio_min' => $request->precio_min,
+                'precio_max' => $request->precio_max,
+                'rating_min' => $request->rating_min,
+                'ordenar' => $sortBy,
+                'direccion' => $sortOrder
+            ]
         ]);
     }
 
@@ -103,6 +160,71 @@ class ProductController extends Controller
             'success' => true,
             'message' => 'Categorías recuperadas exitosamente',
             'data' => $categorias
+        ]);
+    }
+
+    /**
+     * Obtener estadísticas de productos para filtros dinámicos
+     */
+    public function stats(): JsonResponse
+    {
+        $stats = Producto::activos()
+            ->withAvg('comentarios', 'calificacion')
+            ->withCount('comentarios')
+            ->get();
+
+        if ($stats->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No hay productos disponibles para generar estadísticas'
+            ], 404);
+        }
+
+        // Calcular estadísticas de precios
+        $precios = $stats->pluck('precio');
+        $precioMin = $precios->min();
+        $precioMax = $precios->max();
+
+        // Calcular estadísticas de ratings
+        $ratings = $stats->filter(function ($producto) {
+            return $producto->comentarios_avg_calificacion > 0;
+        })->pluck('comentarios_avg_calificacion');
+
+        $ratingMin = $ratings->isNotEmpty() ? $ratings->min() : 0;
+        $ratingMax = $ratings->isNotEmpty() ? $ratings->max() : 5;
+
+        // Contar productos por categoría
+        $productosPorCategoria = $stats->groupBy('categorias_id_categoria')
+            ->map(function ($productos, $categoriaId) {
+                $categoria = $productos->first()->categoria;
+                return [
+                    'categoria_id' => $categoriaId,
+                    'categoria_nombre' => $categoria ? $categoria->nombre : 'Sin categoría',
+                    'total_productos' => $productos->count()
+                ];
+            })->values();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Estadísticas recuperadas exitosamente',
+            'data' => [
+                'total_productos' => $stats->count(),
+                'precio' => [
+                    'min' => round($precioMin, 2),
+                    'max' => round($precioMax, 2),
+                    'promedio' => round($precios->avg(), 2)
+                ],
+                'rating' => [
+                    'min' => round($ratingMin, 1),
+                    'max' => round($ratingMax, 1),
+                    'promedio' => round($ratings->avg() ?? 0, 1)
+                ],
+                'productos_por_categoria' => $productosPorCategoria,
+                'productos_con_reviews' => $stats->where('comentarios_count', '>', 0)->count(),
+                'productos_destacados' => $stats->filter(function ($producto) {
+                    return $producto->comentarios_avg_calificacion >= 4.0 || $producto->comentarios_count == 0;
+                })->count()
+            ]
         ]);
     }
 

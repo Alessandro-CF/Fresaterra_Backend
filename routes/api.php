@@ -27,6 +27,7 @@ Route::prefix('v1')->group(function () {
     // Productos públicos (ESTANDARIZADAS EN INGLÉS)
     Route::get('products', [ProductController::class, 'index']);
     Route::get('products/featured', [ProductController::class, 'featured']);
+    Route::get('products/stats', [ProductController::class, 'stats']);
     Route::get('products/{id}', [ProductController::class, 'show']);
     Route::get('categories', [ProductController::class, 'categories']);
     
