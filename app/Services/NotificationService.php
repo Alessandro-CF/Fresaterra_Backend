@@ -166,7 +166,7 @@ class NotificationService
      */
     public static function enviarATodosLosUsuarios($tipo, $asunto, $contenido, $datos = [])
     {
-        $users = User::where('estado', 'activo')->pluck('id_usuario')->toArray();
+        $users = User::pluck('id_usuario')->toArray();
         return self::enviarAMultiplesUsuarios($users, $tipo, $asunto, $contenido, $datos);
     }
 

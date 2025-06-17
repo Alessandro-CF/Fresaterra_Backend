@@ -224,36 +224,66 @@ class NotificacionController extends Controller
         }
         try {
             $userIds = collect();
+            $totalUsuarios = 0;
             
             if ($request->get('todos_los_usuarios')) {
-                $userIds = User::where('estado', 'activo')->pluck('id_usuario');
+                // Obtener todos los usuarios registrados (sin filtro de estado)
+                $userIds = User::pluck('id_usuario');
+                $totalUsuarios = $userIds->count();
+                
+                Log::info("Enviando notificación a todos los usuarios registrados: {$totalUsuarios} usuarios");
+                
             } elseif ($request->has('id_usuario')) {
                 $userIds->push($request->id_usuario);
+                $totalUsuarios = 1;
             }
 
             if ($userIds->isEmpty()) {
+                // Proporcionar más información sobre por qué no hay usuarios
+                $totalUsuarios = User::count();
+                
                 return response()->json([
-                    'message' => 'No se encontraron usuarios destinatarios'
+                    'message' => 'No se encontraron usuarios destinatarios',
+                    'errors' => ['usuarios' => 'No hay usuarios registrados en el sistema'],
+                    'debug' => [
+                        'total_usuarios_bd' => $totalUsuarios,
+                        'todos_los_usuarios' => $request->get('todos_los_usuarios'),
+                        'id_usuario' => $request->get('id_usuario')
+                    ]
                 ], 400);
             }
 
             $datos = [
                 'prioridad' => $request->get('prioridad', 'normal'),
                 'admin_id' => Auth::id(),
-                'fecha_envio' => now()->toDateTimeString()
+                'fecha_envio' => now()->toDateTimeString(),
+                'tipo_mensaje' => $request->tipo_mensaje,
+                'contenido_mensaje' => $request->contenido_mensaje,
+                'envio_masivo' => $request->get('todos_los_usuarios', false),
+                'tipo' => $request->tipo_mensaje
             ];
 
+            // Usar 'campanita' como tipo por defecto para las notificaciones in-app
+            $tipoNotificacion = 'campanita';
+            
             $notificaciones = NotificationService::enviarAMultiplesUsuarios(
                 $userIds->toArray(),
-                $request->tipo_mensaje,
+                $tipoNotificacion,
                 $request->asunto,
                 $request->contenido_mensaje,
                 $datos
             );
+            
+            $mensaje = $request->get('todos_los_usuarios') 
+                ? "Notificación enviada exitosamente a todos los usuarios registrados ({$totalUsuarios} usuarios)"
+                : "Notificación enviada exitosamente al usuario seleccionado";
+                
             return response()->json([
-                'mensaje' => 'Notificación(es) enviada(s) exitosamente',
+                'mensaje' => $mensaje,
                 'total_enviadas' => count($notificaciones),
-                'usuarios_notificados' => $userIds->count()
+                'usuarios_notificados' => $userIds->count(),
+                'tipo_mensaje' => $request->tipo_mensaje,
+                'es_envio_masivo' => $request->get('todos_los_usuarios', false)
             ], 201);
 
         } catch (\Exception $e) {
@@ -579,7 +609,7 @@ class NotificacionController extends Controller
     public function getRegisteredUsers()
     {
         try {
-            $users = User::select('id_usuario', 'nombre', 'apellidos', 'email', 'telefono', 'created_at')
+            $users = User::select('id_usuario', 'nombre', 'apellidos', 'email', 'telefono', 'estado', 'created_at')
                 ->orderBy('created_at', 'desc')
                 ->get();
 
@@ -595,6 +625,36 @@ class NotificacionController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error al obtener usuarios',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Obtener conteo de usuarios activos para notificaciones masivas
+     * GET /api/v1/admin/users/count
+     */
+    public function getActiveUsersCount(Request $request)
+    {
+        try {
+            $totalUsuarios = User::count();
+            $usuariosSinNotificar = User::whereDoesntHave('notificaciones', function ($query) {
+                    $query->where('created_at', '>=', now()->subHours(24));
+                })
+                ->count();
+
+            return response()->json([
+                'success' => true,
+                'total_usuarios_activos' => $totalUsuarios,
+                'usuarios_sin_notificar_24h' => $usuariosSinNotificar,
+                'mensaje' => "Hay {$totalUsuarios} usuarios registrados en el sistema"
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error al obtener conteo de usuarios: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener información de usuarios',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -1418,6 +1478,82 @@ class NotificacionController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error al limpiar notificaciones de email: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Debug: Verificar estado de usuarios en la base de datos
+     * GET /api/v1/admin/users/debug
+     */
+    public function debugUsers(Request $request)
+    {
+        try {
+            $totalUsuarios = User::count();
+            $usuariosActivos = User::where('estado', true)->count();
+            $usuariosInactivos = User::where('estado', false)->count();
+            
+            $ejemploUsuarios = User::select('id_usuario', 'nombre', 'email', 'estado')
+                ->limit(5)
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'debug_info' => [
+                    'total_usuarios' => $totalUsuarios,
+                    'usuarios_activos' => $usuariosActivos,
+                    'usuarios_inactivos' => $usuariosInactivos,
+                    'ejemplo_usuarios' => $ejemploUsuarios,
+                    'estructura_estado' => [
+                        'tipo' => 'boolean',
+                        'activo' => true,
+                        'inactivo' => false
+                    ]
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error en debug de usuarios: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error en debug',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Debug: Verificar estado de usuarios y notificaciones
+     * GET /api/v1/admin/debug/users-status
+     */
+    public function debugUsersStatus(Request $request)
+    {
+        try {
+            $totalUsers = User::count();
+            $sampleUsers = User::select('id_usuario', 'nombre', 'email', 'created_at')->limit(5)->get();
+            $totalNotifications = Notificacion::count();
+            $recentNotifications = Notificacion::with('mensaje')
+                ->orderBy('fecha_creacion', 'desc')
+                ->limit(5)
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'debug_info' => [
+                    'total_usuarios' => $totalUsers,
+                    'usuarios_muestra' => $sampleUsers,
+                    'total_notificaciones' => $totalNotifications,
+                    'notificaciones_recientes' => $recentNotifications,
+                    'timestamp' => now()->toDateTimeString()
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error en debug de usuarios: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error en debug',
+                'error' => $e->getMessage()
             ], 500);
         }
     }

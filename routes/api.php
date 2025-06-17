@@ -105,6 +105,10 @@ Route::prefix('v1')->group(function () {
         Route::prefix('admin/users')->group(function () {
             // Obtener lista de usuarios registrados (acceso administrativo)
             Route::get('registered', [NotificacionController::class, 'getRegisteredUsers']);
+            // Obtener conteo de usuarios activos
+            Route::get('count', [NotificacionController::class, 'getActiveUsersCount']);
+            // Debug de usuarios
+            Route::get('debug-status', [NotificacionController::class, 'debugUsersStatus']);
         });
     });
     
