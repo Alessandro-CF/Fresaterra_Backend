@@ -78,6 +78,7 @@ Route::prefix('v1')->group(function () {
             Route::post('/', 'store');          // Agregar producto al carrito
             Route::put('/{id}', 'update');      // Actualizar cantidad
             Route::delete('/{id}', 'destroy');  // Eliminar item del carrito
+            Route::delete('/', 'clearAll');     // Vaciar todo el carrito
             Route::post('/checkout', 'checkout'); // Convertir carrito a pedido
         });
         

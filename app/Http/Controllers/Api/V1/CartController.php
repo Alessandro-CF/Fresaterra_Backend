@@ -470,4 +470,48 @@ class CartController extends Controller
             return 1;
         }
     }
+
+    /**
+     * Vaciar completamente el carrito del usuario
+     */
+    public function clearAll(): JsonResponse
+    {
+        try {
+            // Encontrar el carrito activo del usuario
+            $cart = Carrito::where('usuarios_id_usuario', Auth::id())
+                       ->where('estado', 'activo')
+                       ->first();
+            
+            // Si no hay carrito, devolver éxito
+            if (!$cart) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'No hay carrito que vaciar',
+                    'data' => []
+                ]);
+            }
+
+            // Eliminar todos los items del carrito
+            CarritoItems::where('carritos_id_carrito', $cart->id_carrito)->delete();
+            
+            // Opcional: también podemos actualizar totales en la tabla de carrito
+            $cart->update([
+                'total' => 0
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Carrito vaciado exitosamente',
+                'data' => []
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error vaciando el carrito: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al vaciar el carrito',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }
