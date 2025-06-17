@@ -78,6 +78,18 @@ Route::prefix('v1')->group(function () {
             Route::post('/notify-multiple', [NotificacionController::class, 'apiNotifyMultipleUsers']);
             Route::post('/notify-by-event', [NotificacionController::class, 'apiNotifyByEvent']);
         });
+        
+        // Rutas para servicios específicos de notificación
+        Route::prefix('notificaciones')->group(function () {
+            Route::post('/enviar-email', [NotificacionController::class, 'enviarEmail']);
+            Route::post('/enviar-campanita', [NotificacionController::class, 'enviarCampanita']);
+            Route::post('/enviar-campanita-con-email', [NotificacionController::class, 'enviarCampanitaConEmail']);
+            Route::post('/enviar-directa', [NotificacionController::class, 'enviarDirecta']);
+            Route::put('/marcar-leida/{id}', [NotificacionController::class, 'marcarComoLeida']);
+            Route::put('/marcar-todas-leidas', [NotificacionController::class, 'marcarTodasComoLeidas']);
+            Route::get('/estadisticas', [NotificacionController::class, 'obtenerEstadisticas']);
+            Route::delete('/eliminar/{id}', [NotificacionController::class, 'eliminarNotificacion']);
+        });
     });
 
     // Rutas para confirmaciones de registro por email (solo administradores)

@@ -838,17 +838,45 @@ class NotificacionController extends Controller
     {
         $results = [];
 
-        // Enviar notificación in-app siempre
-        $inAppResult = $this->sendInAppNotification($userId, $data, $tipo);
-        $results['inApp'] = $inAppResult;
-
-        // Enviar email si se solicita
         if ($sendEmail) {
-            $emailResult = $this->sendEmailNotification($userId, $data, $tipo, $asunto);
-            $results['email'] = $emailResult;
+            // Si se solicita email, enviar campanita con email (evita duplicidad)
+            try {
+                $user = User::find($userId);
+                if (!$user) {
+                    throw new \Exception('Usuario no encontrado');
+                }
+
+                $contenido = $data['mensaje'] ?? 'Notificación nueva';
+                $asuntoFinal = $asunto ?? $data['asunto'] ?? 'Notificación de Fresaterra';
+                
+                $notificacion = NotificationService::enviarCampanitaConEmail(
+                    $userId,
+                    $asuntoFinal,
+                    $contenido,
+                    $data
+                );
+
+                $results['campanita_with_email'] = [
+                    'success' => true,
+                    'message' => 'Notificación campanita con email enviada correctamente',
+                    'notification_id' => $notificacion->id_notificacion
+                ];
+            } catch (\Exception $e) {
+                Log::error('Error al enviar notificación campanita con email: ' . $e->getMessage());
+                $results['campanita_with_email'] = [
+                    'success' => false,
+                    'message' => 'Error al enviar notificación: ' . $e->getMessage()
+                ];
+            }
+        } else {
+            // Solo enviar notificación in-app (campanita)
+            $inAppResult = $this->sendInAppNotification($userId, $data, $tipo);
+            $results['inApp'] = $inAppResult;
         }
 
-        $allSuccess = $inAppResult['success'] && (!$sendEmail || $results['email']['success']);
+        $allSuccess = array_reduce($results, function($carry, $result) {
+            return $carry && $result['success'];
+        }, true);
 
         return [
             'success' => $allSuccess,
@@ -1090,6 +1118,55 @@ class NotificacionController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Error al enviar campanita: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al enviar la notificación: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Enviar notificación campanita con email usando servicio personalizado
+     * POST /api/v1/notificaciones/enviar-campanita-con-email
+     */
+    public function enviarCampanitaConEmail(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'user_id' => 'required|exists:users,id_usuario',
+            'asunto' => 'required|string|max:255',
+            'contenido' => 'required|string',
+            'prioridad' => 'sometimes|in:baja,normal,alta,urgente'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Datos inválidos',
+                'errors' => $validator->errors()
+            ], 400);
+        }
+
+        try {
+            $datos = [
+                'prioridad' => $request->prioridad ?? 'normal',
+                'metadata' => $request->metadata ?? []
+            ];
+
+            $notificacion = NotificationService::enviarCampanitaConEmail(
+                $request->user_id,
+                $request->asunto,
+                $request->contenido,
+                $datos
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Notificación campanita con email enviada correctamente',
+                'data' => $notificacion->load(['usuario', 'mensaje'])
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error al enviar campanita con email: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Error al enviar la notificación: ' . $e->getMessage()
