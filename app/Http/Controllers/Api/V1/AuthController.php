@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Rol;
+use App\Notifications\WelcomeUserNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
@@ -29,30 +30,47 @@ class AuthController extends Controller
 
         if ($validator->fails()) {
             return response()->json([
-                'error' => $validator->errors()
+                'message' => 'Error de validación',
+                'errors' => $validator->errors()
             ], 422);
         }
 
         $user = User::create([
             'nombre' => $request->get('nombre'),
             'apellidos' => $request->get('apellidos'),
-            'telefono' => $request->get('telefono'),
             'email' => $request->get('email'),
             'password' => bcrypt($request->get('password')),
-            'roles_id_rol' => 2, // Siempre asignar rol de Cliente (id 2)
-            'estado' => true, // Usuario activo por defecto
+            'telefono' => $request->get('telefono', ''), // Valor por defecto si no se proporciona
+            'roles_id_rol' => 2, // Asignar rol por defecto (usuario)
         ]);
 
-        // Cargar la relación con el rol
-        $user->load('role');
+        // Enviar notificación de bienvenida por correo
+        $emailSent = false;
+        try {
+            $user->notify(new WelcomeUserNotification($user));
+            $emailSent = true;
+            Log::info("Correo de bienvenida enviado exitosamente a: {$user->email}");
+        } catch (\Exception $e) {
+            // Log del error pero no fallar el registro
+            Log::error('Error enviando email de bienvenida: ' . $e->getMessage());
+        }
 
         $token = JWTAuth::fromUser($user);
 
-        return response()->json([
+        $response = [
             'message' => 'Usuario registrado exitosamente',
             'user' => $user,
             'token' => $token
-        ], 201);
+        ];
+
+        // Agregar información sobre el correo enviado
+        if ($emailSent) {
+            $response['email_notification'] = "Correo de confirmación enviado a {$user->email}";
+        } else {
+            $response['email_notification'] = "Usuario registrado, pero no se pudo enviar el correo de confirmación";
+        }
+
+        return response()->json($response, 201);
     }
 
     /**
@@ -67,7 +85,8 @@ class AuthController extends Controller
 
         if ($validator->fails()) {
             return response()->json([
-                'error' => $validator->errors()
+                'message' => 'Error de validación',
+                'errors' => $validator->errors()
             ], 422);
         }
 
@@ -81,7 +100,10 @@ class AuthController extends Controller
             }
 
             // Obtener el usuario autenticado
-            $user = Auth::user();
+            $authenticatedUser = Auth::user();
+
+            // Obtener el usuario con la relación del rol usando el primaryKey correcto
+            $user = \App\Models\User::where('id_usuario', $authenticatedUser->id_usuario)->with('role')->first();
 
             // Verificar si la cuenta está activa usando el campo 'estado'
             if (!$user || $user->estado !== true) {
@@ -102,8 +124,13 @@ class AuthController extends Controller
             }
 
             return response()->json([
+                'success' => true,
+                'message' => 'Login exitoso',
                 'token' => $token,
-                'user' => $user
+                'user' => $user,
+                'access_token' => $token, // Algunos frontend esperan access_token
+                'token_type' => 'bearer',
+                'expires_in' => JWTAuth::factory()->getTTL() * 60
             ], 200);
         } catch (JWTException $e) {
             return response()->json([

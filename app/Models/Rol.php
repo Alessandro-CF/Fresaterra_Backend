@@ -26,15 +26,11 @@ class Rol extends Model
 {
 	protected $table = 'roles';
 	protected $primaryKey = 'id_rol';
+	public $timestamps = true; // Usar created_at y updated_at
 	
-	protected $casts = [
-		'fecha_creacion' => 'datetime'
-	];
-
 	protected $fillable = [
 		'nombre',
-		'descripcion',
-		'fecha_creacion'
+		'descripcion'
 	];
 
 	public function usuarios()

@@ -14,7 +14,10 @@ return new class extends Migration
         Schema::create('mensajes', function (Blueprint $table) {
             $table->id('id_mensaje');
             $table->string('tipo');
+            $table->string('asunto')->nullable(); // Asunto del mensaje
             $table->text('contenido');
+            $table->string('estado')->default('activo'); // activo, inactivo
+            $table->string('prioridad')->default('normal'); // baja, normal, alta, urgente
             $table->timestamps();
         });
     }

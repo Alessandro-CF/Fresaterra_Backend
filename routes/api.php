@@ -12,9 +12,17 @@ use App\Http\Controllers\Api\V1\Admin\ProductosController;
 use App\Http\Controllers\Api\V1\Admin\CategoriasController;
 use App\Http\Controllers\Api\V1\Admin\InventarioController;
 use App\Http\Controllers\Api\V1\CartController;
+use App\Http\Controllers\Api\V1\NotificacionController;
+use App\Http\Controllers\WelcomeController;
+use App\Http\Middleware\IsAdmin;
+use App\Http\Middleware\IsUserAuth;
+
+// Ruta para la página de bienvenida
+Route::get('api', [WelcomeController::class, 'index']);
+
+/**//* Rutas con el prefijo /api/v1 */
 
 Route::prefix('v1')->group(function () {
-    
     // * RUTAS PÚBLICAS (Sin autenticación)
     
     // Autenticación
@@ -22,6 +30,8 @@ Route::prefix('v1')->group(function () {
         Route::post('register', 'register');
         Route::post('login', 'login');
         Route::post('password/email', 'sendPasswordResetEmail');
+        // Ruta específica para el login de administradores
+        Route::post('admin/login', 'login');
     });
     
     // Productos públicos (ESTANDARIZADAS EN INGLÉS)
@@ -31,8 +41,14 @@ Route::prefix('v1')->group(function () {
     Route::get('products/{id}', [ProductController::class, 'show']);
     Route::get('categories', [ProductController::class, 'categories']);
     
+    // Servicios públicos para probar API
+    Route::get('comments', [ComentariosController::class, 'index']);
+    Route::get('comments/{id}', [ComentariosController::class, 'show']);
+    
     // Reviews públicas
     Route::get('products/{productId}/reviews', [ComentariosController::class, 'getProductReviews']);
+    
+   
 
     // * RUTAS PRIVADAS (Requieren autenticación JWT)
     Route::middleware('jwt.auth')->group(function () {
@@ -185,4 +201,66 @@ Route::prefix('v1')->group(function () {
     // NOTA: Las rutas de carrito están ya definidas arriba dentro del grupo 'middleware jwt.auth'
     // Las rutas duplicadas a continuación están en proceso de deprecación
     // y deberían utilizar las rutas estandarizadas en inglés definidas arriba
+    
+    // Rutas para notificaciones de usuario
+    Route::middleware('jwt.auth')->group(function () {
+        Route::prefix('me/notificaciones')->group(function () {
+            Route::get('/', [NotificacionController::class, 'getUserNotifications']);
+            Route::get('/unread', [NotificacionController::class, 'getUnreadNotifications']); // Ruta faltante
+            Route::delete('/clean-email', [NotificacionController::class, 'cleanEmailNotifications']); // Nueva ruta
+            Route::patch('/{id_notificacion}', [NotificacionController::class, 'updateUserNotificationStatus']);
+            Route::delete('/{id_notificacion}', [NotificacionController::class, 'deleteUserNotification']);
+        });
+    });
+
+    // Rutas para notificaciones de administrador
+    Route::middleware(['jwt.auth', 'admin'])->group(function () {
+        Route::prefix('admin/notificaciones')->group(function () {
+            Route::post('/', [NotificacionController::class, 'sendAdminNotification']);
+            Route::get('/', [NotificacionController::class, 'getAllAdminNotifications']);
+            Route::delete('/{id_notificacion}', [NotificacionController::class, 'deleteAdminNotification']);
+        });
+    });
+
+    // Rutas API adicionales para NotificationService (protegidas)
+    Route::middleware(['jwt.auth', 'admin'])->group(function () {
+        Route::prefix('admin/notificaciones')->group(function () {
+            Route::post('/send-complete', [NotificacionController::class, 'apiSendCompleteNotification']);
+            Route::post('/from-message', [NotificacionController::class, 'apiCreateNotificationFromMessage']);
+            Route::post('/notify-multiple', [NotificacionController::class, 'apiNotifyMultipleUsers']);
+            Route::post('/notify-by-event', [NotificacionController::class, 'apiNotifyByEvent']);
+        });
+        
+        // Rutas para servicios específicos de notificación
+        Route::prefix('notificaciones')->group(function () {
+            Route::post('/enviar-email', [NotificacionController::class, 'enviarEmail']);
+            Route::post('/enviar-campanita', [NotificacionController::class, 'enviarCampanita']);
+            Route::post('/enviar-campanita-con-email', [NotificacionController::class, 'enviarCampanitaConEmail']);
+            Route::post('/enviar-directa', [NotificacionController::class, 'enviarDirecta']);
+            Route::put('/marcar-leida/{id}', [NotificacionController::class, 'marcarComoLeida']);
+            Route::put('/marcar-todas-leidas', [NotificacionController::class, 'marcarTodasComoLeidas']);
+            Route::get('/estadisticas', [NotificacionController::class, 'obtenerEstadisticas']);
+            Route::delete('/eliminar/{id}', [NotificacionController::class, 'eliminarNotificacion']);
+        });
+    });
+
+    // Rutas para confirmaciones de registro por email (solo administradores)
+    Route::middleware(['jwt.auth', 'admin'])->group(function () {
+        Route::prefix('admin/emails')->group(function () {
+            // Envío de emails de confirmación de registro
+            Route::post('test', [NotificacionController::class, 'sendTestEmail']);
+            Route::post('registration-confirmation', [NotificacionController::class, 'sendRegistrationConfirmation']);
+            Route::post('registration-confirmation/multiple', [NotificacionController::class, 'sendMultipleRegistrationConfirmations']);
+            Route::post('registration-confirmation/all', [NotificacionController::class, 'sendConfirmationToAllUsers']);
+        });
+        
+        Route::prefix('admin/users')->group(function () {
+            // Obtener lista de usuarios registrados (acceso administrativo)
+            Route::get('registered', [NotificacionController::class, 'getRegisteredUsers']);
+            // Obtener conteo de usuarios activos
+            Route::get('count', [NotificacionController::class, 'getActiveUsersCount']);
+            // Debug de usuarios
+            Route::get('debug-status', [NotificacionController::class, 'debugUsersStatus']);
+        });
+    });
 });
