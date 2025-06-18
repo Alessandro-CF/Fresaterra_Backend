@@ -116,7 +116,7 @@
 
         <!-- Botón de acción -->
         <div class="button-container">
-            <a href="{{ $frontendUrl }}/login" class="cta-button">
+            <a href="{{ $frontendUrl }}login" class="cta-button">
                 🚀 Iniciar Sesión Ahora
             </a>
         </div>

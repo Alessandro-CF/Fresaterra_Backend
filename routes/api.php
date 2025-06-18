@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\V1\NotificacionController;
 use App\Http\Controllers\WelcomeController;
 use App\Http\Middleware\IsAdmin;
 use App\Http\Middleware\IsUserAuth;
+use Illuminate\Support\Facades\Auth;
 
 // Ruta para la página de bienvenida
 Route::get('api', [WelcomeController::class, 'index']);
@@ -24,7 +25,7 @@ Route::get('api', [WelcomeController::class, 'index']);
 
 Route::prefix('v1')->group(function () {
     // * RUTAS PÚBLICAS (Sin autenticación)
-    
+
     // Autenticación
     Route::controller(AuthController::class)->group(function () {
         Route::post('register', 'register');
@@ -33,31 +34,25 @@ Route::prefix('v1')->group(function () {
         // Ruta específica para el login de administradores
         Route::post('admin/login', 'login');
     });
-    
+
     // Productos públicos (ESTANDARIZADAS EN INGLÉS)
     Route::get('products', [ProductController::class, 'index']);
     Route::get('products/featured', [ProductController::class, 'featured']);
     Route::get('products/stats', [ProductController::class, 'stats']);
     Route::get('products/{id}', [ProductController::class, 'show']);
     Route::get('categories', [ProductController::class, 'categories']);
-    
-    // Servicios públicos para probar API
-    Route::get('comments', [ComentariosController::class, 'index']);
-    Route::get('comments/{id}', [ComentariosController::class, 'show']);
-    
+
     // Reviews públicas
     Route::get('products/{productId}/reviews', [ComentariosController::class, 'getProductReviews']);
-    
-   
 
     // * RUTAS PRIVADAS (Requieren autenticación JWT)
     Route::middleware('jwt.auth')->group(function () {
-        
+
         // Gestión de productos (REQUIERE AUTENTICACIÓN)
         Route::post('products', [ProductController::class, 'store']);
         Route::put('products/{id}', [ProductController::class, 'update']);
         Route::delete('products/{id}', [ProductController::class, 'destroy']);
-        
+
         // Gestión de cuenta del usuario
         Route::controller(AuthController::class)->group(function () {
             Route::post('logout', 'logout');            // Cerrar sesión
@@ -68,7 +63,7 @@ Route::prefix('v1')->group(function () {
             Route::patch('me/deactivate', 'deactivateAccount'); // Desactivar cuenta
         });
 
-         // Gestión de direcciones del usuario
+        // Gestión de direcciones del usuario
         Route::controller(DireccionesController::class)->group(function () {
             Route::get('/me/addresses', 'index');                          // Listar direcciones
             Route::post('addresses', 'store');                         // Crear dirección
@@ -79,7 +74,7 @@ Route::prefix('v1')->group(function () {
             Route::delete('addresses/{id}', 'destroy');                // Eliminar dirección
             Route::patch('addresses/{id}/set-default', 'setAsDefault'); // Establecer como predeterminada
         });
-        
+
         // Gestión de reseñas del usuario
         Route::controller(ComentariosController::class)->group(function () {
             Route::post('reviews', 'store');                               // Crear nueva reseña
@@ -87,7 +82,7 @@ Route::prefix('v1')->group(function () {
             Route::delete('reviews/{id}', 'destroy');                     // Eliminar reseña
             Route::get('products/{productId}/my-review', 'getUserReview'); // Obtener mi reseña para un producto
         });
-        
+
         // Gestión del carrito
         Route::controller(CartController::class)->prefix('cart')->group(function () {
             Route::get('/', 'index');           // Obtener carrito actual
@@ -97,10 +92,10 @@ Route::prefix('v1')->group(function () {
             Route::delete('/', 'clearAll');     // Vaciar todo el carrito
             Route::post('/checkout', 'checkout'); // Convertir carrito a pedido
         });
-        
+
         // Pagos (requiere autenticación)
         Route::post('create-preference', [MercadoPagoController::class, 'createPreference']);
-        
+
         // Gestión de pagos del usuario
         Route::controller(PagosController::class)->prefix('payments')->group(function () {
             Route::get('methods', 'getPaymentMethods');          // Métodos de pago activos
@@ -112,7 +107,7 @@ Route::prefix('v1')->group(function () {
             Route::post('success', 'handlePaymentSuccess');     // Confirmar pago exitoso al regresar de MP
             Route::post('update-status-from-mp', 'updateStatusFromMercadoPago'); // Actualizar estado desde MP
         });
-        
+
         // Gestión de pedidos del usuario
         Route::controller(PedidoController::class)->prefix('orders')->group(function () {
             Route::get('/', 'index');                           // Listar pedidos del usuario
@@ -125,10 +120,28 @@ Route::prefix('v1')->group(function () {
     });
 
     // * RUTAS DE ADMINISTRADOR (JWT + Admin)
-    
+
     Route::middleware(['jwt.auth', 'admin'])->group(function () {
-        
-        // Gestión de usuarios (admin)
+
+        // Rutas de usuarios (admin) - desde NotificationController
+        Route::prefix('admin/users')->group(function () {
+            // Obtener lista de usuarios registrados (acceso administrativo)
+            Route::get('registered', [NotificacionController::class, 'getRegisteredUsers']);
+            // Ruta de prueba para verificar que el grupo funciona
+            Route::get('test-users-group', function () {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Grupo admin/users funcionando',
+                    'test' => 'Esta ruta funciona'
+                ]);
+            });
+            // Obtener conteo de usuarios activos
+            Route::get('count', [NotificacionController::class, 'getActiveUsersCount']);
+            // Debug de usuarios
+            Route::get('debug-status', [NotificacionController::class, 'debugUsersStatus']);
+        });
+
+        // Gestión de usuarios (admin) - desde AuthController
         Route::controller(AuthController::class)->prefix('admin')->group(function () {
             Route::get('dashboard', 'adminDashboard');                    // Dashboard con estadísticas
             Route::get('users', 'getAllUsers');                           // Listar todos los usuarios con filtros
@@ -173,25 +186,47 @@ Route::prefix('v1')->group(function () {
             Route::patch('inventory/products/{id}/status', 'updateStatus');    // Cambiar estado inventario
         });
 
-         // Gestión de direcciones (admin)
+        // Gestión de direcciones (admin)
         Route::controller(DireccionesController::class)->group(function () {
             Route::get('admin/users/{userId}/addresses', 'getUserAddresses');     // Direcciones de un usuario
             Route::get('admin/addresses/statistics', 'getAddressStatistics');     // Estadísticas de direcciones
         });
-        
+
         // Gestión de pagos (admin)
         Route::controller(PagosController::class)->prefix('admin/payments')->group(function () {
             Route::get('/', 'getAllPayments');                  // Todos los pagos con filtros
             Route::get('/statistics', 'getPaymentStatistics');  // Estadísticas de pagos
             Route::patch('/{id}/status', 'adminUpdateStatus');  // Actualizar estado como admin
         });
-        
+
         // Gestión de pedidos (admin)
         Route::controller(PedidoController::class)->prefix('admin/orders')->group(function () {
             Route::get('/', 'getAllOrders');                    // Todos los pedidos con filtros
             Route::get('/statistics', 'getOrderStatistics');    // Estadísticas de pedidos
             Route::patch('/{id}/status', 'adminUpdateStatus');  // Actualizar estado como admin
         });
+    });
+
+    // Ruta de prueba para verificar autenticación de admin (fuera del grupo admin)
+    Route::middleware('jwt.auth')->get('admin/test-auth', function () {
+        return response()->json([
+            'success' => true,
+            'message' => 'Autenticación JWT funcionando',
+            'user' => Auth::user(),
+            'user_id' => Auth::id(),
+            'is_admin' => Auth::user() ? Auth::user()->roles_id_rol === 1 : false
+        ]);
+    });
+
+    // Ruta de prueba para verificar middleware admin completo
+    Route::middleware(['jwt.auth', 'admin'])->get('admin/test-admin-middleware', function () {
+        return response()->json([
+            'success' => true,
+            'message' => 'Middleware admin funcionando',
+            'user' => Auth::user(),
+            'user_id' => Auth::id(),
+            'is_admin' => Auth::user() ? Auth::user()->roles_id_rol === 1 : false
+        ]);
     });
 
     // * WEBHOOKS (Sin autenticación)  
@@ -201,7 +236,7 @@ Route::prefix('v1')->group(function () {
     // NOTA: Las rutas de carrito están ya definidas arriba dentro del grupo 'middleware jwt.auth'
     // Las rutas duplicadas a continuación están en proceso de deprecación
     // y deberían utilizar las rutas estandarizadas en inglés definidas arriba
-    
+
     // Rutas para notificaciones de usuario
     Route::middleware('jwt.auth')->group(function () {
         Route::prefix('me/notificaciones')->group(function () {
@@ -230,7 +265,7 @@ Route::prefix('v1')->group(function () {
             Route::post('/notify-multiple', [NotificacionController::class, 'apiNotifyMultipleUsers']);
             Route::post('/notify-by-event', [NotificacionController::class, 'apiNotifyByEvent']);
         });
-        
+
         // Rutas para servicios específicos de notificación
         Route::prefix('notificaciones')->group(function () {
             Route::post('/enviar-email', [NotificacionController::class, 'enviarEmail']);
@@ -252,15 +287,6 @@ Route::prefix('v1')->group(function () {
             Route::post('registration-confirmation', [NotificacionController::class, 'sendRegistrationConfirmation']);
             Route::post('registration-confirmation/multiple', [NotificacionController::class, 'sendMultipleRegistrationConfirmations']);
             Route::post('registration-confirmation/all', [NotificacionController::class, 'sendConfirmationToAllUsers']);
-        });
-        
-        Route::prefix('admin/users')->group(function () {
-            // Obtener lista de usuarios registrados (acceso administrativo)
-            Route::get('registered', [NotificacionController::class, 'getRegisteredUsers']);
-            // Obtener conteo de usuarios activos
-            Route::get('count', [NotificacionController::class, 'getActiveUsersCount']);
-            // Debug de usuarios
-            Route::get('debug-status', [NotificacionController::class, 'debugUsersStatus']);
         });
     });
 });

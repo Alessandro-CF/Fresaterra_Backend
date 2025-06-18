@@ -8381,7 +8381,6 @@
             "homepage": "https://symfony.com",
             "support": {
                 "source": "https://github.com/symfony/yaml/tree/v7.3.0"
-                "source": "https://github.com/symfony/yaml/tree/v7.3.0"
             },
             "funding": [
                 {
@@ -8453,13 +8452,11 @@
     "aliases": [],
     "minimum-stability": "stable",
     "stability-flags": [],
-    "stability-flags": [],
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {
         "php": "^8.2"
     },
-    "platform-dev": [],
     "platform-dev": [],
     "plugin-api-version": "2.6.0"
 }
