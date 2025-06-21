@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\V1\Admin\CategoriasController;
 use App\Http\Controllers\Api\V1\Admin\InventarioController;
 use App\Http\Controllers\Api\V1\CartController;
 use App\Http\Controllers\Api\V1\NotificacionController;
+use App\Http\Controllers\Api\V1\OrderStatusController;
 use App\Http\Controllers\WelcomeController;
 use App\Http\Middleware\IsAdmin;
 use App\Http\Middleware\IsUserAuth;
@@ -113,11 +114,20 @@ Route::prefix('v1')->group(function () {
             Route::get('/', 'index');                           // Listar pedidos del usuario
             Route::post('/', 'store');                          // Crear nuevo pedido
             Route::get('/{id}', 'show');                        // Detalles de pedido específico
-            Route::patch('/{id}/status', 'updateStatus');       // Actualizar estado de pedido
             Route::patch('/{id}/cancel', 'cancel');             // Cancelar pedido
             Route::get('/{id}/payment', [PagosController::class, 'getPaymentByOrder']); // Info de pago del pedido
         });
+        
+        // Gestión de estados de pedidos
+        Route::controller(OrderStatusController::class)->prefix('orders')->group(function () {
+            Route::get('/{id}/status', 'getStatus');           // Obtener estado de pedido
+            Route::patch('/{id}/status', 'updateStatus');      // Actualizar estado de pedido
+            Route::post('/{id}/resume', 'resumeOrder');        // Reanudar un pedido abandonado
+        });
     });
+
+    // * RUTA ESPECIAL PARA ABANDONO (Sin autenticación estricta)
+    Route::post('orders/{id}/mark-abandoned', [OrderStatusController::class, 'markAsAbandoned']);
 
     // * RUTAS DE ADMINISTRADOR (JWT + Admin)
 
