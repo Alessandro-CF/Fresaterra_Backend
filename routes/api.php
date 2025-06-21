@@ -17,6 +17,13 @@ use App\Http\Controllers\WelcomeController;
 use App\Http\Middleware\IsAdmin;
 use App\Http\Middleware\IsUserAuth;
 use Illuminate\Support\Facades\Auth;
+use App\Http\Controllers\Api\V1\Auth\NewPasswordController;
+use App\Http\Controllers\Api\V1\Auth\PasswordResetLinkController;
+use App\Http\Controllers\Api\V1\Auth\RegisteredUserController;
+use App\Http\Controllers\Api\V1\Auth\SocialiteController;
+use App\Http\Controllers\Api\V1\Auth\AuthenticatedSessionController;
+use App\Http\Controllers\Api\V1\CategoryController;
+use App\Http\Controllers\Api\V1\ProfileController;
 
 // Ruta para la página de bienvenida
 Route::get('api', [WelcomeController::class, 'index']);
@@ -34,6 +41,10 @@ Route::prefix('v1')->group(function () {
         // Ruta específica para el login de administradores
         Route::post('admin/login', 'login');
     });
+
+    // Autenticación Social
+    Route::get('auth/{provider}/redirect', [SocialiteController::class, 'redirect']);
+    Route::get('auth/{provider}/callback', [SocialiteController::class, 'callback']);
 
     // Productos públicos (ESTANDARIZADAS EN INGLÉS)
     Route::get('products', [ProductController::class, 'index']);
