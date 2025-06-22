@@ -10,6 +10,8 @@ use App\Models\Pedido;
 use App\Models\PedidoItems;
 use App\Models\Pago;
 use App\Models\Envio;
+use App\Models\Direccion;
+use App\Models\MetodosPago;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
@@ -19,6 +21,72 @@ use Illuminate\Support\Facades\Log;
 
 class CartController extends Controller
 {
+    // 🔧 MÉTODOS HELPER PARA SNAPSHOTS (reutilizados del PedidoController)
+    
+    /**
+     * Crear snapshot de producto para pedido_items
+     */
+    private function createProductSnapshot(Producto $producto): array
+    {
+        return [
+            'producto_nombre_snapshot' => $producto->nombre,
+            'producto_descripcion_snapshot' => $producto->descripcion,
+            'producto_imagen_snapshot' => $producto->url_imagen,
+            'producto_peso_snapshot' => $producto->peso,
+            'categoria_nombre_snapshot' => $producto->categoria ? $producto->categoria->nombre : null
+        ];
+    }
+
+    /**
+     * Crear snapshot de dirección para envios (optimizado)
+     */
+    private function createAddressSnapshot(?Direccion $direccion): array
+    {
+        if (!$direccion) {
+            return [
+                'direccion_linea1_snapshot' => null,
+                'direccion_linea2_snapshot' => null,
+                'direccion_ciudad_snapshot' => null,
+                'direccion_estado_snapshot' => null
+            ];
+        }
+
+        return [
+            'direccion_linea1_snapshot' => $direccion->calle . ' ' . $direccion->numero,
+            'direccion_linea2_snapshot' => $direccion->referencia,
+            'direccion_ciudad_snapshot' => $direccion->ciudad,
+            'direccion_estado_snapshot' => $direccion->distrito
+        ];
+    }
+
+    /**
+     * Crear snapshot de transportista para envios (optimizado)
+     */
+    private function createTransportistSnapshot($transportista): array
+    {
+        if (!$transportista) {
+            return [
+                'transportista_nombre_snapshot' => null,
+                'transportista_telefono_snapshot' => null
+            ];
+        }
+
+        return [
+            'transportista_nombre_snapshot' => $transportista->nombre ?? null,
+            'transportista_telefono_snapshot' => $transportista->telefono ?? null
+        ];
+    }
+
+    /**
+     * Crear snapshot de método de pago para pagos (optimizado)
+     */
+    private function createPaymentMethodSnapshot(MetodosPago $metodoPago): array
+    {
+        return [
+            'metodo_pago_nombre_snapshot' => $metodoPago->nombre
+        ];
+    }
+
     /**
      * Obtener el carrito actual del usuario
      */
@@ -281,10 +349,14 @@ class CartController extends Controller
             DB::beginTransaction();
 
             try {
-                // Calcular total
-                $montoTotal = $cart->getTotal();
+                // Calcular costo de envío antes de crear el pedido
+                $shippingCost = $request->shipping_cost ?? $this->calculateShippingCost($cart);
+                
+                // Calcular total incluyendo envío
+                $cartSubtotal = $cart->getTotal();
+                $montoTotal = $cartSubtotal + $shippingCost;
 
-                // Crear el pedido
+                // Crear el pedido con el total que incluye envío
                 $pedido = Pedido::create([
                     'monto_total' => $montoTotal,
                     'estado' => 'pendiente',
@@ -292,29 +364,48 @@ class CartController extends Controller
                     'usuarios_id_usuario' => Auth::id()
                 ]);
 
-                // Transferir items del carrito al pedido
+                // Transferir items del carrito al pedido con snapshots
                 foreach ($cart->items as $item) {
-                    PedidoItems::create([
+                    // 🔧 Crear snapshot del producto para preservar datos históricos
+                    $productSnapshot = $this->createProductSnapshot($item->producto);
+                    
+                    PedidoItems::create(array_merge([
                         'cantidad' => $item->cantidad,
                         'precio' => $item->producto->precio,
                         'subtotal' => $item->cantidad * $item->producto->precio,
                         'pedidos_id_pedido' => $pedido->id_pedido,
                         'productos_id_producto' => $item->productos_id_producto
+                    ], $productSnapshot));
+                    
+                    Log::info('Item del carrito transferido a pedido con snapshot', [
+                        'pedido_id' => $pedido->id_pedido,
+                        'producto_id' => $item->productos_id_producto,
+                        'producto_nombre' => $productSnapshot['producto_nombre_snapshot'],
+                        'categoria' => $productSnapshot['categoria_nombre_snapshot']
                     ]);
                 }
 
-                // Crear registro de pago inicial
-                $pago = Pago::create([
-                    'monto_pago' => $montoTotal,
-                    'estado_pago' => 'pendiente',
-                    'fecha_pago' => now(),
-                    'metodos_pago_id_metodo_pago' => 1, // Mercado Pago por defecto
-                    'pedidos_id_pedido' => $pedido->id_pedido,
-                    'referencia_pago' => 'PENDING_' . $pedido->id_pedido . '_' . time()
-                ]);
+                // Crear registro de pago inicial con snapshot
+                $metodoPago = MetodosPago::find(1); // Mercado Pago por defecto
+                if (!$metodoPago) {
+                    $metodoPago = MetodosPago::where('activo', true)->first();
+                }
+                
+                if ($metodoPago) {
+                    // 🔧 Crear snapshot del método de pago para preservar datos históricos
+                    $paymentMethodSnapshot = $this->createPaymentMethodSnapshot($metodoPago);
+                    
+                    $pago = Pago::create(array_merge([
+                        'monto_pago' => $montoTotal,
+                        'estado_pago' => 'pendiente',
+                        'fecha_pago' => now(),
+                        'metodos_pago_id_metodo_pago' => $metodoPago->id_metodo_pago,
+                        'pedidos_id_pedido' => $pedido->id_pedido,
+                        'referencia_pago' => 'PENDING_' . $pedido->id_pedido . '_' . time()
+                    ], $paymentMethodSnapshot));
+                }
 
                 // Crear registro de envío
-                $shippingCost = $request->shipping_cost ?? $this->calculateShippingCost($cart);
                 $addressId = $request->address_info['address_id'] ?? null;
                 
                 $this->createShippingRecord($pedido, $shippingCost, $addressId);
@@ -361,22 +452,32 @@ class CartController extends Controller
             // Asignar transportista usando rotación
             $transportistaId = $this->assignTransporter();
             
-            $envio = Envio::create([
+            // 🔧 Obtener datos para snapshots
+            $direccion = $addressId ? Direccion::find($addressId) : null;
+            $transportista = DB::table('transportistas')->where('id_transportista', $transportistaId)->first();
+            
+            // Crear snapshots
+            $addressSnapshot = $this->createAddressSnapshot($direccion);
+            $transportistSnapshot = $this->createTransportistSnapshot($transportista);
+            
+            $envio = Envio::create(array_merge([
                 'monto_envio' => $shippingCost,
                 'estado' => 'pendiente',
-                'fecha_envio' => now()->addDay(),
+                'fecha_envio' => now(), // 🔧 Mismo día para fresas frescas (entrega en 1-2 horas)
                 'transportistas_id_transportista' => $transportistaId,
                 'pedidos_id_pedido' => $pedido->id_pedido,
                 'direcciones_id_direccion' => $addressId
-            ]);
+            ], $addressSnapshot, $transportistSnapshot));
 
-            // Log del envío creado
-            Log::info('Envío creado desde carrito', [
+            // Log del envío creado con snapshots
+            Log::info('Envío creado desde carrito con snapshots', [
                 'pedido_id' => $pedido->id_pedido,
                 'envio_id' => $envio->id_envio,
                 'transportista_id' => $transportistaId,
+                'transportista_nombre' => $transportistSnapshot['transportista_nombre_snapshot'],
                 'monto_envio' => $shippingCost,
-                'direccion_id' => $addressId
+                'direccion_id' => $addressId,
+                'direccion_snapshot' => $addressSnapshot['direccion_linea1_snapshot']
             ]);
 
         } catch (\Exception $e) {
@@ -396,15 +497,26 @@ class CartController extends Controller
     {
         try {
             $strawberrySubtotal = 0;
+            $cartTotal = 0;
             
             foreach ($cart->items as $item) {
+                $itemSubtotal = $item->getSubtotal();
+                $cartTotal += $itemSubtotal;
+                
+                // Sumar solo productos de fresas (categoría 1)
                 if ($item->producto && $item->producto->categorias_id_categoria == 1) {
-                    $strawberrySubtotal += $item->getSubtotal();
+                    $strawberrySubtotal += $itemSubtotal;
                 }
             }
             
-            // Envío gratis si subtotal de fresas >= $30
-            return $strawberrySubtotal >= 30.00 ? 0.00 : 5.99;
+            // 🔧 NUEVA LÓGICA: Envío gratis si:
+            // 1. Total del carrito >= S/ 30 (cualquier producto) O
+            // 2. Subtotal de fresas >= S/ 30 (condición original)
+            $FREE_SHIPPING_THRESHOLD = 30.00;
+            $hasCartTotalOffer = $cartTotal >= $FREE_SHIPPING_THRESHOLD;
+            $hasStrawberryPackOffer = $strawberrySubtotal >= $FREE_SHIPPING_THRESHOLD;
+            
+            return ($hasCartTotalOffer || $hasStrawberryPackOffer) ? 0.00 : 5.99;
             
         } catch (\Exception $e) {
             Log::error('Error calculando costo de envío desde carrito', [

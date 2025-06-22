@@ -19,6 +19,72 @@ use Illuminate\Support\Facades\DB;
 
 class PedidoController extends Controller
 {
+    // 🔧 MÉTODOS HELPER PARA SNAPSHOTS
+    
+    /**
+     * Crear snapshot de producto para pedido_items
+     */
+    private function createProductSnapshot(Producto $producto): array
+    {
+        return [
+            'producto_nombre_snapshot' => $producto->nombre,
+            'producto_descripcion_snapshot' => $producto->descripcion,
+            'producto_imagen_snapshot' => $producto->url_imagen,
+            'producto_peso_snapshot' => $producto->peso,
+            'categoria_nombre_snapshot' => $producto->categoria ? $producto->categoria->nombre : null
+        ];
+    }
+
+    /**
+     * Crear snapshot de dirección para envios (optimizado)
+     */
+    private function createAddressSnapshot(?Direccion $direccion): array
+    {
+        if (!$direccion) {
+            return [
+                'direccion_linea1_snapshot' => null,
+                'direccion_linea2_snapshot' => null,
+                'direccion_ciudad_snapshot' => null,
+                'direccion_estado_snapshot' => null
+            ];
+        }
+
+        return [
+            'direccion_linea1_snapshot' => $direccion->calle . ' ' . $direccion->numero,
+            'direccion_linea2_snapshot' => $direccion->referencia,
+            'direccion_ciudad_snapshot' => $direccion->ciudad,
+            'direccion_estado_snapshot' => $direccion->distrito
+        ];
+    }
+
+    /**
+     * Crear snapshot de transportista para envios (optimizado)
+     */
+    private function createTransportistSnapshot($transportista): array
+    {
+        if (!$transportista) {
+            return [
+                'transportista_nombre_snapshot' => null,
+                'transportista_telefono_snapshot' => null
+            ];
+        }
+
+        return [
+            'transportista_nombre_snapshot' => $transportista->nombre ?? null,
+            'transportista_telefono_snapshot' => $transportista->telefono ?? null
+        ];
+    }
+
+    /**
+     * Crear snapshot de método de pago para pagos (optimizado)
+     */
+    private function createPaymentMethodSnapshot(MetodosPago $metodoPago): array
+    {
+        return [
+            'metodo_pago_nombre_snapshot' => $metodoPago->nombre
+        ];
+    }
+
     /**
      * Obtener todos los pedidos del usuario autenticado
      * GET /me/orders
@@ -145,16 +211,26 @@ class PedidoController extends Controller
                     'estado' => 'pendiente',
                     'fecha_creacion' => now(),
                     'usuarios_id_usuario' => $user->id_usuario
-                ]);                // Crear los items del pedido
+                ]);                // Crear los items del pedido con snapshots
                 foreach ($request->items as $item) {
                     $producto = $productos->find($item['product_id']);
                     
-                    PedidoItems::create([
+                    // 🔧 Crear snapshot del producto para preservar datos históricos
+                    $productSnapshot = $this->createProductSnapshot($producto);
+                    
+                    PedidoItems::create(array_merge([
                         'cantidad' => $item['quantity'],
                         'precio' => $item['price'],
                         'subtotal' => $item['quantity'] * $item['price'],
                         'pedidos_id_pedido' => $pedido->id_pedido,
                         'productos_id_producto' => $item['product_id']
+                    ], $productSnapshot));
+                    
+                    Log::info('Item del pedido creado con snapshot', [
+                        'pedido_id' => $pedido->id_pedido,
+                        'producto_id' => $item['product_id'],
+                        'producto_nombre' => $productSnapshot['producto_nombre_snapshot'],
+                        'categoria' => $productSnapshot['categoria_nombre_snapshot']
                     ]);
                 }
 
@@ -164,14 +240,17 @@ class PedidoController extends Controller
                 if (!$metodoPago) {
                     $metodoPago = MetodosPago::where('activo', true)->first(); // Fallback al primer método activo
                 }                if ($metodoPago) {
-                    $pago = Pago::create([
+                    // 🔧 Crear snapshot del método de pago para preservar datos históricos
+                    $paymentMethodSnapshot = $this->createPaymentMethodSnapshot($metodoPago);
+                    
+                    $pago = Pago::create(array_merge([
                         'fecha_pago' => now(),
                         'monto_pago' => $request->monto_total,
                         'estado_pago' => 'pendiente',
                         'referencia_pago' => 'ORDER_' . $pedido->id_pedido . '_' . time(),
                         'pedidos_id_pedido' => $pedido->id_pedido,
                         'metodos_pago_id_metodo_pago' => $metodoPago->id_metodo_pago
-                    ]);
+                    ], $paymentMethodSnapshot));
                       Log::info('Pago inicial creado', [
                         'pago_id' => $pago->id_pago,
                         'pedido_id' => $pedido->id_pedido,
@@ -452,21 +531,35 @@ class PedidoController extends Controller
                 : $this->calculateShippingCostFromOrder($pedido);
             
             // Asignar transportista (rotación simple)
-            $transportistaId = $this->assignTransporter();            // Crear el registro de envío con estado "pendiente"
-            $envio = Envio::create([
+            $transportistaId = $this->assignTransporter();
+            
+            // 🔧 Obtener datos para snapshots
+            $direccion = $addressId ? Direccion::find($addressId) : null;
+            $transportista = DB::table('transportistas')->where('id_transportista', $transportistaId)->first();
+            
+            // Crear snapshots
+            $addressSnapshot = $this->createAddressSnapshot($direccion);
+            $transportistSnapshot = $this->createTransportistSnapshot($transportista);
+
+            // Crear el registro de envío con estado "pendiente" y snapshots
+            $envio = Envio::create(array_merge([
                 'monto_envio' => $costoEnvio,
                 'estado' => 'pendiente', // Estado pendiente hasta que se confirme el pago
-                'fecha_envio' => now()->addDay(), // Programado para el día siguiente
+                'fecha_envio' => now(), // 🔧 Mismo día para fresas frescas (entrega en 1-2 horas)
                 'transportistas_id_transportista' => $transportistaId,
                 'pedidos_id_pedido' => $pedido->id_pedido,
                 'direcciones_id_direccion' => $addressId // NUEVA RELACIÓN: FK en envios hacia direcciones
-            ]);            Log::info('Envío creado al momento del checkout', [
+            ], $addressSnapshot, $transportistSnapshot));
+
+            Log::info('Envío creado al momento del checkout con snapshots', [
                 'pedido_id' => $pedido->id_pedido,
                 'envio_id' => $envio->id_envio,
                 'transportista_id' => $transportistaId,
+                'transportista_nombre' => $transportistSnapshot['transportista_nombre_snapshot'],
                 'monto_envio' => $costoEnvio,
                 'estado' => 'pendiente',
                 'direccion_id' => $addressId,
+                'direccion_snapshot' => $addressSnapshot['direccion_linea1_snapshot'],
                 'shipping_from_frontend' => $shippingCostFromFrontend !== null
             ]);
 
@@ -503,22 +596,27 @@ class PedidoController extends Controller
             // Obtener los items del pedido con sus productos
             $pedidoItems = $pedido->pedido_items()->with('producto')->get();
             
-            // Calcular subtotal de paquetes de fresas (categoryId: '1' según el frontend)
+            // Calcular subtotal de paquetes de fresas y total del pedido
             $strawberryPacksSubtotal = 0;
+            $orderTotal = 0;
             
             foreach ($pedidoItems as $item) {
+                $orderTotal += $item->subtotal;
+                
                 // Verificar si el producto pertenece a la categoría de paquetes de fresas
                 if ($item->producto && $item->producto->categorias_id_categoria == 1) {
                     $strawberryPacksSubtotal += $item->subtotal;
                 }
             }
             
-            // Aplicar la misma lógica del frontend: envío gratis si subtotal de fresas >= S/ 30
-            if ($strawberryPacksSubtotal >= 30.00) {
-                return 0.00; // Envío gratis
-            }
+            // 🔧 NUEVA LÓGICA: Envío gratis si:
+            // 1. Total del pedido >= S/ 30 (cualquier producto) O
+            // 2. Subtotal de fresas >= S/ 30 (condición original)
+            $FREE_SHIPPING_THRESHOLD = 30.00;
+            $hasCartTotalOffer = $orderTotal >= $FREE_SHIPPING_THRESHOLD;
+            $hasStrawberryPackOffer = $strawberryPacksSubtotal >= $FREE_SHIPPING_THRESHOLD;
             
-            return 5.99; // Costo fijo como en el frontend
+            return ($hasCartTotalOffer || $hasStrawberryPackOffer) ? 0.00 : 5.99;
             
         } catch (\Exception $e) {
             Log::error('Error calculando costo de envío', [

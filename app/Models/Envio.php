@@ -45,7 +45,15 @@ class Envio extends Model
 		'fecha_envio',
 		'transportistas_id_transportista',
 		'pedidos_id_pedido',
-		'direcciones_id_direccion'
+		'direcciones_id_direccion',
+		// 🔧 Campos snapshot optimizados para preservar datos históricos de dirección
+		'direccion_linea1_snapshot',
+		'direccion_linea2_snapshot',
+		'direccion_ciudad_snapshot',
+		'direccion_estado_snapshot',
+		// 🔧 Campos snapshot optimizados para preservar datos históricos de transportista
+		'transportista_nombre_snapshot',
+		'transportista_telefono_snapshot'
 	];
 
 	public function pedido()

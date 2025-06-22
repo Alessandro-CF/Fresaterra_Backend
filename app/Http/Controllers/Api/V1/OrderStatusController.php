@@ -161,22 +161,26 @@ class OrderStatusController extends Controller
                         'estado_pago' => 'pendiente',
                         'fecha_pago' => now()
                     ]);
-                } else {
-                    // Si no hay pago, crear uno nuevo
+                } else {                    // Si no hay pago, crear uno nuevo con snapshot
                     $metodoPago = MetodosPago::where('nombre', 'Mercado Pago')->first();
                     
                     if (!$metodoPago) {
                         $metodoPago = MetodosPago::where('activo', true)->first();
                     }
                     
-                    Pago::create([
+                    // 🔧 Crear snapshot del método de pago
+                    $paymentMethodSnapshot = [
+                        'metodo_pago_nombre_snapshot' => $metodoPago->nombre
+                    ];
+                    
+                    Pago::create(array_merge([
                         'fecha_pago' => now(),
                         'monto_pago' => $pedido->monto_total,
                         'estado_pago' => 'pendiente',
                         'referencia_pago' => 'ORDER_RESUMED_' . $pedido->id_pedido . '_' . time(),
                         'pedidos_id_pedido' => $pedido->id_pedido,
                         'metodos_pago_id_metodo_pago' => $metodoPago->id_metodo_pago
-                    ]);
+                    ], $paymentMethodSnapshot));
                 }
                 
                 DB::commit();
