@@ -616,7 +616,7 @@ class PedidoController extends Controller
             $hasCartTotalOffer = $orderTotal >= $FREE_SHIPPING_THRESHOLD;
             $hasStrawberryPackOffer = $strawberryPacksSubtotal >= $FREE_SHIPPING_THRESHOLD;
             
-            return ($hasCartTotalOffer || $hasStrawberryPackOffer) ? 0.00 : 5.99;
+            return ($hasCartTotalOffer || $hasStrawberryPackOffer) ? 0.00 : 5.00;
             
         } catch (\Exception $e) {
             Log::error('Error calculando costo de envío', [
@@ -625,7 +625,7 @@ class PedidoController extends Controller
             ]);
             
             // Fallback: usar la lógica anterior si hay error
-            return $pedido->monto_total >= 30.00 ? 0.00 : 5.99;
+            return $pedido->monto_total >= 30.00 ? 0.00 : 5.00;
         }
     }
 

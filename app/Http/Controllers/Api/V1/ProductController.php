@@ -28,9 +28,10 @@ class ProductController extends Controller
             $query->categoria($request->categoria);
         }
 
-        // Filtro por búsqueda
-        if ($request->has('busqueda') && $request->busqueda) {
-            $query->buscar($request->busqueda);
+        // Filtro por búsqueda (soporte para 'search' y 'busqueda')
+        $searchTerm = $request->get('search') ?? $request->get('busqueda');
+        if ($searchTerm) {
+            $query->buscar($searchTerm);
         }
 
         // Filtro por rango de precios
@@ -446,6 +447,75 @@ class ProductController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Búsqueda específica con autocompletado
+     */
+    public function search(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'q' => 'required|string|min:1|max:100',
+            'limit' => 'integer|min:1|max:20'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Parámetros de búsqueda inválidos',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $query = $request->get('q');
+        $limit = $request->get('limit', 10);
+
+        // Búsqueda con mayor relevancia
+        $productos = Producto::query()
+            ->activos()
+            ->withAvg('comentarios', 'calificacion')
+            ->withCount('comentarios')
+            ->where(function($q) use ($query) {
+                $q->where('nombre', 'LIKE', "%{$query}%")
+                  ->orWhere('descripcion', 'LIKE', "%{$query}%")
+                  ->orWhereHas('categoria', function($subQuery) use ($query) {
+                      $subQuery->where('nombre', 'LIKE', "%{$query}%");
+                  });
+            })
+            // Ordenar por relevancia: primero coincidencias exactas en nombre
+            ->orderByRaw("CASE 
+                WHEN nombre LIKE ? THEN 1 
+                WHEN nombre LIKE ? THEN 2 
+                WHEN descripcion LIKE ? THEN 3 
+                ELSE 4 
+            END", [
+                $query, 
+                "%{$query}%", 
+                "%{$query}%"
+            ])
+            ->orderByRaw('COALESCE(comentarios_avg_calificacion, 0) DESC')
+            ->limit($limit)
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Búsqueda completada',
+            'data' => $productos->map(function($producto) {
+                return [
+                    'id_producto' => $producto->id_producto,
+                    'nombre' => $producto->nombre,
+                    'descripcion' => Str::limit($producto->descripcion, 100),
+                    'precio' => $producto->precio,
+                    'url_imagen' => $producto->imagen_url, // Usar el accessor que ya maneja la URL completa
+                    'url_imagen_completa' => $producto->imagen_url, // También incluir como url_imagen_completa
+                    'rating' => round($producto->comentarios_avg_calificacion ?? 0, 1),
+                    'categoria' => $producto->categoria?->nombre,
+                    'estado' => $producto->estado
+                ];
+            }),
+            'query' => $query,
+            'total' => $productos->count()
+        ]);
     }
 
 }

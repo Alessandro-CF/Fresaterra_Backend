@@ -130,6 +130,12 @@ class Producto extends Model
         return $this->url_imagen ? url(Storage::url($this->url_imagen)) : null;
     }
 
+    // Accessor para imagen_url (alias de url_imagen_completa)
+    public function getImagenUrlAttribute(): ?string
+    {
+        return $this->url_imagen_completa;
+    }
+
     // Scopes from Product.php
     public function scopeActivos($query)
     {
