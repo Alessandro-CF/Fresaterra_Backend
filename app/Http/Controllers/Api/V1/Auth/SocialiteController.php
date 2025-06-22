@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
 use Tymon\JWTAuth\Facades\JWTAuth;
@@ -27,7 +28,7 @@ class SocialiteController extends Controller
     public function redirect(string $provider)
     {
         if (!in_array($provider, $this->validProviders)) {
-            return redirect(env('FRONTEND_URL', 'http://localhost:5173') . '/login?error=invalid_provider');
+            return redirect(rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/') . '/login?error=invalid_provider');
         }
 
         return Socialite::driver($provider)->stateless()->redirect();
@@ -41,41 +42,41 @@ class SocialiteController extends Controller
      */
     public function callback(string $provider): RedirectResponse
     {
-        \Log::info("Socialite callback started for provider: " . $provider);
+        Log::info("Socialite callback started for provider: " . $provider);
         
         if (!in_array($provider, $this->validProviders)) {
-            \Log::error("Invalid provider: " . $provider);
-            return redirect(env('FRONTEND_URL', 'http://localhost:5173') . '/login?error=invalid_provider');
+            Log::error("Invalid provider: " . $provider);
+            return redirect(rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/') . '/login?error=invalid_provider');
         }
 
         try {
-            \Log::info("Attempting to get user from Socialite for provider: " . $provider);
+            Log::info("Attempting to get user from Socialite for provider: " . $provider);
             $socialiteUser = Socialite::driver($provider)->stateless()->user();
-            \Log::info("Socialite user obtained successfully", [
+            Log::info("Socialite user obtained successfully", [
                 'id' => $socialiteUser->getId(),
                 'email' => $socialiteUser->getEmail(),
                 'name' => $socialiteUser->getName()
             ]);
         } catch (\Exception $e) {
-            \Log::error('Socialite callback error: ' . $e->getMessage(), [
+            Log::error('Socialite callback error: ' . $e->getMessage(), [
                 'provider' => $provider,
                 'trace' => $e->getTraceAsString()
             ]);
-            return redirect(env('FRONTEND_URL', 'http://localhost:5173') . '/login?error=social_auth_failed');
+            return redirect(rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/') . '/login?error=social_auth_failed');
         }
 
         // Validate that we have the required user data
         if (!$socialiteUser->getId() || !$socialiteUser->getEmail()) {
-            \Log::error('Incomplete user data from social provider', [
+            Log::error('Incomplete user data from social provider', [
                 'provider' => $provider,
                 'id' => $socialiteUser->getId(),
                 'email' => $socialiteUser->getEmail()
             ]);
-            return redirect(env('FRONTEND_URL', 'http://localhost:5173') . '/login?error=incomplete_user_data');
+            return redirect(rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/') . '/login?error=incomplete_user_data');
         }
 
         try {
-            \Log::info("Creating or updating user in database");
+            Log::info("Creating or updating user in database");
             
             // Primero, buscar si ya existe un usuario con este email
             $existingUser = User::where('email', $socialiteUser->getEmail())->first();
@@ -91,14 +92,39 @@ class SocialiteController extends Controller
                 
                 // Asignar el usuario existente (ya actualizado) a la variable $user
                 $user = $existingUser;
-                \Log::info("Existing user updated with social login data", ['user_id' => $user->id_usuario]);
+                Log::info("Existing user updated with social login data", ['user_id' => $user->id_usuario]);
             } else {
                 // Si no existe, crear un nuevo usuario
-                // Separar el nombre completo en nombre y apellidos
-                $fullName = $socialiteUser->getName() ?: $socialiteUser->getEmail();
-                $nameParts = explode(' ', $fullName, 2);
-                $nombre = $nameParts[0] ?: 'Usuario';
-                $apellidos = isset($nameParts[1]) ? $nameParts[1] : 'Social';
+                // Separar el nombre completo en nombre y apellidos de manera más inteligente
+                $fullName = trim($socialiteUser->getName() ?: $socialiteUser->getEmail());
+                $nameParts = explode(' ', $fullName);
+                
+                // Si solo hay una palabra, usar como nombre y poner apellido por defecto
+                if (count($nameParts) == 1) {
+                    $nombre = $nameParts[0] ?: 'Usuario';
+                    $apellidos = 'Social';
+                } 
+                // Si hay dos palabras, primera como nombre, segunda como apellido
+                else if (count($nameParts) == 2) {
+                    $nombre = $nameParts[0];
+                    $apellidos = $nameParts[1];
+                }
+                // Si hay 3 palabras, usar la primera como nombre y las dos últimas como apellidos
+                else if (count($nameParts) == 3) {
+                    $nombre = $nameParts[0];
+                    $apellidos = $nameParts[1] . ' ' . $nameParts[2];
+                }
+                // Si hay 4 o más palabras, usar las primeras dos como nombre y el resto como apellidos
+                else {
+                    $nombre = $nameParts[0] . ' ' . $nameParts[1];
+                    $apellidos = implode(' ', array_slice($nameParts, 2));
+                }
+                
+                Log::info("Name parsing for social user", [
+                    'original_name' => $fullName,
+                    'parsed_nombre' => $nombre,
+                    'parsed_apellidos' => $apellidos
+                ]);
                 
                 $user = User::create([
                     'provider' => $provider,
@@ -112,33 +138,33 @@ class SocialiteController extends Controller
                     'avatar' => $socialiteUser->getAvatar(),
                     'email_verified_at' => now(),
                 ]);
-                \Log::info("New user created with social login", ['user_id' => $user->id_usuario]);
+                Log::info("New user created with social login", ['user_id' => $user->id_usuario]);
             }
         } catch (\Exception $e) {
-            \Log::error('Error creating/updating user: ' . $e->getMessage(), [
+            Log::error('Error creating/updating user: ' . $e->getMessage(), [
                 'provider' => $provider,
                 'provider_id' => $socialiteUser->getId(),
                 'email' => $socialiteUser->getEmail(),
                 'trace' => $e->getTraceAsString()
             ]);
-            return redirect(env('FRONTEND_URL', 'http://localhost:5173') . '/login?error=user_creation_failed');
+            return redirect(rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/') . '/login?error=user_creation_failed');
         }
 
         try {
-            \Log::info("Generating JWT token for user", ['user_id' => $user->id_usuario]);
+            Log::info("Generating JWT token for user", ['user_id' => $user->id_usuario]);
             $token = JWTAuth::fromUser($user);
-            \Log::info("JWT token generated successfully");
+            Log::info("JWT token generated successfully");
         } catch (\Exception $e) {
-            \Log::error('Error generating JWT token: ' . $e->getMessage(), [
+            Log::error('Error generating JWT token: ' . $e->getMessage(), [
                 'user_id' => $user->id_usuario,
                 'trace' => $e->getTraceAsString()
             ]);
-            return redirect(env('FRONTEND_URL', 'http://localhost:5173') . '/login?error=token_generation_failed');
+            return redirect(rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/') . '/login?error=token_generation_failed');
         }
 
-        $frontendUrl = env('FRONTEND_URL', 'http://localhost:5173');
+        $frontendUrl = rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/');
         $redirectUrl = $frontendUrl . '/auth/callback?token=' . $token;
-        \Log::info("Redirecting to frontend", ['url' => $redirectUrl]);
+        Log::info("Redirecting to frontend", ['url' => $redirectUrl]);
         
         return redirect($redirectUrl);
     }
