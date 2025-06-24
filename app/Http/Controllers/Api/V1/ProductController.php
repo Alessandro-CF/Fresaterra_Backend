@@ -253,14 +253,72 @@ class ProductController extends Controller
 
         try {
             // Procesar y guardar la imagen
-            // Procesar y guardar la imagen
             $nombreImagen = null;
             if ($request->hasFile('url_imagen')) {
                 $imagen = $request->file('url_imagen');
-                $nombreImagen = Str::uuid() . '.' . $imagen->getClientOriginalExtension();
+                
+                // OPCIÓN 1: Usar nombre del producto + timestamp
+                $nombreProducto = Str::slug($request->nombre); // Convierte "Fresas Premium" a "fresas-premium"
+                $extension = $imagen->getClientOriginalExtension();
+                $timestamp = now()->format('YmdHis');
+                $nombreImagen = $nombreProducto . '_' . $timestamp . '.' . $extension;
+                
+                // OPCIÓN 2: Mantener nombre original con timestamp (descomenta si prefieres esta)
+                // $originalName = pathinfo($imagen->getClientOriginalName(), PATHINFO_FILENAME);
+                // $nombreImagen = Str::slug($originalName) . '_' . $timestamp . '.' . $extension;
+                
+                // OPCIÓN 3: Solo timestamp (más corto pero menos descriptivo)
+                // $nombreImagen = $timestamp . '.' . $extension;
+                
+                // OPCIÓN 4: UUID (actual - más seguro pero menos legible)
+                // $nombreImagen = Str::uuid() . '.' . $imagen->getClientOriginalExtension();
+
+                // Log inicial del proceso de subida
+                Log::info('Iniciando proceso de subida de imagen', [
+                    'original_name' => $imagen->getClientOriginalName(),
+                    'generated_name' => $nombreImagen,
+                    'size' => $imagen->getSize(),
+                    'mime_type' => $imagen->getMimeType()
+                ]);
 
                 // Guardar la imagen en storage/app/public/productos
-                $imagen->storeAs('productos', $nombreImagen, 'public');
+                $storedPath = $imagen->storeAs('productos', $nombreImagen, 'public');
+                
+                // Verificar que la imagen se guardó correctamente
+                if (!$storedPath) {
+                    Log::error('Error al guardar la imagen en storage', [
+                        'nombre_imagen' => $nombreImagen,
+                        'disk' => 'public',
+                        'path' => 'productos/' . $nombreImagen
+                    ]);
+                    
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Error al guardar la imagen'
+                    ], 500);
+                }
+
+                // Verificar que el archivo existe físicamente
+                $fullPath = storage_path('app/public/productos/' . $nombreImagen);
+                if (!file_exists($fullPath)) {
+                    Log::error('La imagen no existe físicamente después de la subida', [
+                        'expected_path' => $fullPath,
+                        'stored_path' => $storedPath
+                    ]);
+                    
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'La imagen no se guardó correctamente'
+                    ], 500);
+                }
+
+                Log::info('Imagen guardada exitosamente', [
+                    'stored_path' => $storedPath,
+                    'full_path' => $fullPath,
+                    'file_size' => filesize($fullPath),
+                    'url_imagen_db' => 'productos/' . $nombreImagen
+                ]);
+                
             } else {
                 return response()->json([
                     'success' => false,
