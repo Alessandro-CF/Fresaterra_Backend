@@ -61,7 +61,7 @@ class Producto extends Model
 		'estado',
 		'peso',
 		'fecha_creacion',
-		'categorias_id_categoria' // Ensured from Product.php
+		'categorias_id_categoria'
 	];
 
     protected $appends = ['url_imagen_completa']; // Added from Product.php
@@ -128,12 +128,6 @@ class Producto extends Model
     public function getUrlImagenCompletaAttribute(): ?string
     {
         return $this->url_imagen ? url(Storage::url($this->url_imagen)) : null;
-    }
-
-    // Accessor para imagen_url (alias de url_imagen_completa)
-    public function getImagenUrlAttribute(): ?string
-    {
-        return $this->url_imagen_completa;
     }
 
     // Scopes from Product.php

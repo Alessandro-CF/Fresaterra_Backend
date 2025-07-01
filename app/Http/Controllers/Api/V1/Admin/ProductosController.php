@@ -8,6 +8,7 @@ use App\Models\Inventario;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class ProductosController extends Controller
 {
@@ -69,44 +70,118 @@ class ProductosController extends Controller
      */
     public function store(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'nombre' => 'required|string|min:3|max:100',
-            'descripcion' => 'required|string|min:10|max:510',
-            'precio' => 'required|numeric|min:0',
-            'url_imagen' => 'required|string|max:255',
-            'estado' => 'required|in:1,2',
-            'peso' => 'required|string|min:3|max:100',
-            'categorias_id_categoria' => 'required|integer|exists:categorias,id_categoria',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Error de validación',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
         try {
-            $producto = Producto::create([
-                'nombre' => $request->nombre,
-                'descripcion' => $request->descripcion,
-                'precio' => $request->precio,
-                'url_imagen' => $request->url_imagen,
-                'estado' => $request->estado,
-                'peso' => $request->peso,
-                'categorias_id_categoria' => $request->categorias_id_categoria,
-                'fecha_creacion' => now(),
+            // Log temporal para debug
+            Log::info('Frontend product creation attempt', [
+                'all_data' => $request->all(),
+                'files' => $request->allFiles(),
+                'content_type' => $request->header('content-type'),
+                'auth_header' => $request->header('authorization') ? 'present' : 'missing'
             ]);
 
+            $validator = Validator::make($request->all(), [
+                'nombre' => 'required|string|min:3|max:100',
+                'descripcion' => 'required|string|min:10|max:510',
+                'precio' => 'required|numeric|min:0',
+                'stock' => 'sometimes|integer|min:0', // Campo opcional para compatibilidad
+                'peso' => 'required|string|min:3|max:100',
+                'estado' => 'sometimes|in:1,2', // Opcional, por defecto será 1 (activo)
+                'categorias_id_categoria' => 'required|integer|exists:categorias,id_categoria',
+                'imagen' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
+                'url_imagen' => 'sometimes|string|max:255' // Para compatibilidad con el sistema anterior
+            ]);
+
+            if ($validator->fails()) {
+                Log::error('Frontend validation failed', [
+                    'errors' => $validator->errors()->toArray(),
+                    'received_data' => $request->all()
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error de validación',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $data = $validator->validated();
+            
+            // Establecer valores por defecto
+            $data['estado'] = $data['estado'] ?? '1';
+            $data['fecha_creacion'] = now();
+
+            // Manejar subida de imagen
+            if ($request->hasFile('imagen')) {
+                $imagen = $request->file('imagen');
+                
+                // Verificar que el archivo sea válido
+                if (!$imagen->isValid()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'El archivo de imagen no es válido'
+                    ], 400);
+                }
+
+                // Generar nombre único para la imagen
+                $extension = $imagen->getClientOriginalExtension();
+                $nombreImagen = time() . '_' . uniqid() . '.' . $extension;
+                
+                // Crear directorio si no existe
+                $directorio = 'productos';
+                if (!Storage::disk('public')->exists($directorio)) {
+                    Storage::disk('public')->makeDirectory($directorio);
+                }
+                
+                // Guardar la imagen
+                $rutaImagen = $imagen->storeAs($directorio, $nombreImagen, 'public');
+                
+                if (!$rutaImagen) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Error al guardar la imagen'
+                    ], 500);
+                }
+                
+                $data['url_imagen'] = $rutaImagen;
+            } elseif (!isset($data['url_imagen'])) {
+                // Si no se proporciona imagen ni URL, usar una imagen por defecto
+                $data['url_imagen'] = 'productos/default.jpg';
+            }
+
+            // Remover el campo stock del array de datos ya que no existe en la tabla productos
+            $stock = $data['stock'] ?? null;
+            unset($data['stock']);
+
+            $producto = Producto::create($data);
+            
+            // Si se proporcionó stock, crear entrada en inventario
+            if ($stock !== null && $stock > 0) {
+                Inventario::create([
+                    'productos_id_producto' => $producto->id_producto,
+                    'cantidad_stock' => $stock,
+                    'fecha_actualizacion' => now()
+                ]);
+            }
+
+            $producto->load('categoria');
+
             return response()->json([
+                'success' => true,
                 'message' => 'Producto creado exitosamente',
-                'data' => $producto->load('categoria')
+                'data' => $producto
             ], 201);
 
         } catch (\Exception $e) {
+            // Si hay error y se subió una imagen, eliminarla
+            if (isset($rutaImagen) && Storage::disk('public')->exists($rutaImagen)) {
+                Storage::disk('public')->delete($rutaImagen);
+            }
+            
             Log::error('Error al crear producto: ' . $e->getMessage());
             return response()->json([
-                'message' => 'Error interno del servidor'
+                'success' => false,
+                'message' => 'Error al crear producto',
+                'error' => $e->getMessage()
             ], 500);
         }
     }
@@ -149,47 +224,106 @@ class ProductosController extends Controller
 
         if (!$producto) {
             return response()->json([
+                'success' => false,
                 'message' => 'Producto no encontrado'
             ], 404);
         }
 
-        $validator = Validator::make($request->all(), [
-            'nombre' => 'required|string|min:3|max:100',
-            'descripcion' => 'required|string|min:10|max:510',
-            'precio' => 'required|numeric|min:0',
-            'url_imagen' => 'required|string|max:255',
-            'estado' => 'required|in:1,2',
-            'peso' => 'required|string|min:3|max:100',
-            'categorias_id_categoria' => 'required|integer|exists:categorias,id_categoria',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Error de validación',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
         try {
-            $producto->update([
-                'nombre' => $request->nombre,
-                'descripcion' => $request->descripcion,
-                'precio' => $request->precio,
-                'url_imagen' => $request->url_imagen,
-                'estado' => $request->estado,
-                'peso' => $request->peso,
-                'categorias_id_categoria' => $request->categorias_id_categoria,
+            // Log temporal para debug
+            Log::info('Frontend product update attempt', [
+                'product_id' => $id,
+                'all_data' => $request->all(),
+                'files' => $request->allFiles()
             ]);
 
+            $validator = Validator::make($request->all(), [
+                'nombre' => 'required|string|min:3|max:100',
+                'descripcion' => 'required|string|min:10|max:510',
+                'precio' => 'required|numeric|min:0',
+                'peso' => 'required|string|min:3|max:100',
+                'estado' => 'sometimes|in:1,2',
+                'categorias_id_categoria' => 'required|integer|exists:categorias,id_categoria',
+                'imagen' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
+                'url_imagen' => 'sometimes|string|max:255' // Para compatibilidad
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error de validación',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $data = $validator->validated();
+            $imagenAnterior = $producto->url_imagen;
+
+            // Manejar subida de nueva imagen
+            if ($request->hasFile('imagen')) {
+                $imagen = $request->file('imagen');
+                
+                // Verificar que el archivo sea válido
+                if (!$imagen->isValid()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'El archivo de imagen no es válido'
+                    ], 400);
+                }
+
+                // Generar nombre único para la imagen
+                $extension = $imagen->getClientOriginalExtension();
+                $nombreImagen = time() . '_' . uniqid() . '.' . $extension;
+                
+                // Crear directorio si no existe
+                $directorio = 'productos';
+                if (!Storage::disk('public')->exists($directorio)) {
+                    Storage::disk('public')->makeDirectory($directorio);
+                }
+                
+                // Guardar la nueva imagen
+                $rutaImagen = $imagen->storeAs($directorio, $nombreImagen, 'public');
+                
+                if (!$rutaImagen) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Error al guardar la imagen'
+                    ], 500);
+                }
+                
+                $data['url_imagen'] = $rutaImagen;
+            }
+
+            // Remover campos que no existen en la tabla
+            unset($data['imagen']);
+
+            $producto->update($data);
+
+            // Si se actualizó la imagen y había una imagen anterior diferente a la default, eliminarla
+            if (isset($rutaImagen) && 
+                $imagenAnterior && 
+                $imagenAnterior !== 'productos/default.jpg' && 
+                Storage::disk('public')->exists($imagenAnterior)) {
+                Storage::disk('public')->delete($imagenAnterior);
+            }
+
             return response()->json([
+                'success' => true,
                 'message' => 'Producto actualizado exitosamente',
                 'data' => $producto->load('categoria')
             ], 200);
 
         } catch (\Exception $e) {
+            // Si hay error y se subió una imagen nueva, eliminarla
+            if (isset($rutaImagen) && Storage::disk('public')->exists($rutaImagen)) {
+                Storage::disk('public')->delete($rutaImagen);
+            }
+            
             Log::error('Error al actualizar producto: ' . $e->getMessage());
             return response()->json([
-                'message' => 'Error interno del servidor'
+                'success' => false,
+                'message' => 'Error al actualizar producto',
+                'error' => $e->getMessage()
             ], 500);
         }
     }
@@ -204,49 +338,108 @@ class ProductosController extends Controller
 
         if (!$producto) {
             return response()->json([
+                'success' => false,
                 'message' => 'Producto no encontrado'
             ], 404);
         }
 
-        $validator = Validator::make($request->all(), [
-            'nombre' => 'sometimes|string|min:3|max:100',
-            'descripcion' => 'sometimes|string|min:10|max:510',
-            'precio' => 'sometimes|numeric|min:0',
-            'url_imagen' => 'sometimes|string|max:255',
-            'estado' => 'sometimes|in:1,2',
-            'peso' => 'sometimes|string|min:3|max:100',
-            'categorias_id_categoria' => 'sometimes|integer|exists:categorias,id_categoria',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Error de validación',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
         try {
+            $validator = Validator::make($request->all(), [
+                'nombre' => 'sometimes|string|min:3|max:100',
+                'descripcion' => 'sometimes|string|min:10|max:510',
+                'precio' => 'sometimes|numeric|min:0',
+                'peso' => 'sometimes|string|min:3|max:100',
+                'estado' => 'sometimes|in:1,2',
+                'categorias_id_categoria' => 'sometimes|integer|exists:categorias,id_categoria',
+                'imagen' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
+                'url_imagen' => 'sometimes|string|max:255'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error de validación',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $data = $validator->validated();
+            $imagenAnterior = $producto->url_imagen;
+
+            // Manejar subida de nueva imagen
+            if ($request->hasFile('imagen')) {
+                $imagen = $request->file('imagen');
+                
+                // Verificar que el archivo sea válido
+                if (!$imagen->isValid()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'El archivo de imagen no es válido'
+                    ], 400);
+                }
+
+                // Generar nombre único para la imagen
+                $extension = $imagen->getClientOriginalExtension();
+                $nombreImagen = time() . '_' . uniqid() . '.' . $extension;
+                
+                // Crear directorio si no existe
+                $directorio = 'productos';
+                if (!Storage::disk('public')->exists($directorio)) {
+                    Storage::disk('public')->makeDirectory($directorio);
+                }
+                
+                // Guardar la nueva imagen
+                $rutaImagen = $imagen->storeAs($directorio, $nombreImagen, 'public');
+                
+                if (!$rutaImagen) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Error al guardar la imagen'
+                    ], 500);
+                }
+                
+                $data['url_imagen'] = $rutaImagen;
+            }
+
             // Solo actualizar los campos que se enviaron
             $updateData = [];
             $allowedFields = ['nombre', 'descripcion', 'precio', 'url_imagen', 'estado', 'peso', 'categorias_id_categoria'];
 
             foreach ($allowedFields as $field) {
-                if ($request->has($field)) {
-                    $updateData[$field] = $request->$field;
+                if (array_key_exists($field, $data)) {
+                    $updateData[$field] = $data[$field];
                 }
             }
 
-            $producto->update($updateData);
+            if (!empty($updateData)) {
+                $producto->update($updateData);
+            }
+
+            // Si se actualizó la imagen y había una imagen anterior diferente a la default, eliminarla
+            if (isset($rutaImagen) && 
+                $imagenAnterior && 
+                $imagenAnterior !== 'productos/default.jpg' && 
+                Storage::disk('public')->exists($imagenAnterior)) {
+                Storage::disk('public')->delete($imagenAnterior);
+            }
 
             return response()->json([
+                'success' => true,
                 'message' => 'Producto actualizado exitosamente',
                 'data' => $producto->load('categoria')
             ], 200);
 
         } catch (\Exception $e) {
+            // Si hay error y se subió una imagen nueva, eliminarla
+            if (isset($rutaImagen) && Storage::disk('public')->exists($rutaImagen)) {
+                Storage::disk('public')->delete($rutaImagen);
+            }
+            
             Log::error('Error al actualizar producto parcialmente: ' . $e->getMessage());
             return response()->json([
-                'message' => 'Error interno del servidor'
+                'success' => false,
+                'message' => 'Error al actualizar producto',
+                'error' => $e->getMessage()
             ], 500);
         }
     }
@@ -357,6 +550,7 @@ class ProductosController extends Controller
 
             if (!$producto) {
                 return response()->json([
+                    'success' => false,
                     'message' => 'Producto no encontrado'
                 ], 404);
             }
@@ -364,20 +558,34 @@ class ProductosController extends Controller
             // Verificar si el producto tiene pedidos asociados
             if ($producto->pedido_items()->exists()) {
                 return response()->json([
+                    'success' => false,
                     'message' => 'No se puede eliminar el producto porque tiene pedidos asociados'
                 ], 400);
             }
 
+            // Guardar la ruta de la imagen antes de eliminar el producto
+            $imagenPath = $producto->url_imagen;
+
             $producto->delete();
 
+            // Eliminar la imagen del storage si existe y no es la imagen por defecto
+            if ($imagenPath && 
+                $imagenPath !== 'productos/default.jpg' && 
+                Storage::disk('public')->exists($imagenPath)) {
+                Storage::disk('public')->delete($imagenPath);
+            }
+
             return response()->json([
+                'success' => true,
                 'message' => 'Producto eliminado exitosamente'
             ], 200);
 
         } catch (\Exception $e) {
             Log::error('Error al eliminar producto: ' . $e->getMessage());
             return response()->json([
-                'message' => 'Error interno del servidor'
+                'success' => false,
+                'message' => 'Error al eliminar producto',
+                'error' => $e->getMessage()
             ], 500);
         }
     }

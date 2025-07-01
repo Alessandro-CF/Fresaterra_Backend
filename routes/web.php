@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Http\Response;
+use App\Http\Controllers\Api\V1\Auth\SocialiteController;
 
 Route::get('/', function () {
     return view('welcome');
@@ -23,3 +24,9 @@ Route::get('/storage/{path}', function ($path) {
         ->header('Content-Type', $mimeType)
         ->header('Cache-Control', 'public, max-age=3600');
 })->where('path', '.*');
+
+// Rutas de autenticación social - Necesitan sesiones
+Route::prefix('api/v1')->group(function () {
+    Route::get('auth/{provider}/redirect', [SocialiteController::class, 'redirect'])->name('socialite.redirect');
+    Route::get('auth/{provider}/callback', [SocialiteController::class, 'callback'])->name('socialite.callback');
+});

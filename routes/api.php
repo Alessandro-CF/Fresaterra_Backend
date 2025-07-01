@@ -43,9 +43,9 @@ Route::prefix('v1')->group(function () {
         Route::post('admin/login', 'login');
     });
 
-    // Autenticación Social
-    Route::get('auth/{provider}/redirect', [SocialiteController::class, 'redirect']);
-    Route::get('auth/{provider}/callback', [SocialiteController::class, 'callback']);
+    // Autenticación Social - Movido a web.php
+    // Las rutas sociales necesitan sesiones que no están disponibles en el grupo API
+    Route::post('auth/{provider}', [SocialiteController::class, 'handleSocialAuth']);
 
     // Productos públicos (ESTANDARIZADAS EN INGLÉS)
     Route::get('products', [ProductController::class, 'index']);
