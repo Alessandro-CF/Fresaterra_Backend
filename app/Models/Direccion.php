@@ -9,7 +9,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Class Direccione
+ * Class Direccion
  * 
  * @property int $id_direccion
  * @property string $calle

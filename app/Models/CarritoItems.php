@@ -7,9 +7,10 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Class CarritoItem
+ * Class CarritoItems
  * 
  * @property int $id_carrito_items
  * @property int|null $cantidad
@@ -25,6 +26,7 @@ class CarritoItems extends Model
 {
 	protected $table = 'carrito_items';
 	protected $primaryKey = 'id_carrito_items';
+	public $timestamps = false;
 
 	protected $casts = [
 		'cantidad' => 'int',
@@ -38,13 +40,23 @@ class CarritoItems extends Model
 		'productos_id_producto'
 	];
 
-	public function carrito()
+    protected $with = ['producto'];
+
+	public function carrito(): BelongsTo
 	{
-		return $this->belongsTo(Carrito::class, 'carritos_id_carrito');
+		return $this->belongsTo(Carrito::class, 'carritos_id_carrito', 'id_carrito');
 	}
 
-	public function producto()
+	public function producto(): BelongsTo
 	{
-		return $this->belongsTo(Producto::class, 'productos_id_producto');
+		return $this->belongsTo(Producto::class, 'productos_id_producto', 'id_producto');
 	}
+
+    public function getSubtotal(): float
+    {
+        if ($this->producto) {
+            return $this->cantidad * $this->producto->precio;
+        }
+        return 0;
+    }
 }

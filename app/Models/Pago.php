@@ -43,7 +43,9 @@ class Pago extends Model
 		'estado_pago',
 		'referencia_pago',
 		'pedidos_id_pedido',
-		'metodos_pago_id_metodo_pago'
+		'metodos_pago_id_metodo_pago',
+		// 🔧 Campo snapshot optimizado para preservar datos históricos de método de pago
+		'metodo_pago_nombre_snapshot'
 	];
 
 	public function metodos_pago()

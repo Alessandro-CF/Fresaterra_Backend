@@ -16,7 +16,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $tipo
  * @property string $contenido
  * 
- * @property Collection|Notificacione[] $notificaciones
+ * @property Collection|Notificacion[] $notificaciones
  *
  * @package App\Models
  */

@@ -10,7 +10,7 @@ use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Class Notificacione
+ * Class Notificacion
  * 
  * @property int $id_notificacion
  * @property string $estado
@@ -27,27 +27,85 @@ class Notificacion extends Model
 {
 	protected $table = 'notificaciones';
 	protected $primaryKey = 'id_notificacion';
+    
+    /**
+     * Generar un UUID para nuevas notificaciones
+     */
+    protected static function boot()
+    {
+        parent::boot();
+        
+        static::creating(function ($model) {
+            if (empty($model->uuid)) {
+                $model->uuid = \Illuminate\Support\Str::uuid()->toString();
+            }
+        });
+    }    protected $casts = [
+        'fecha_creacion' => 'datetime',
+        'read_at' => 'datetime',
+        'usuarios_id_usuario' => 'int',
+        'mensajes_id_mensaje' => 'int',
+        'data' => 'array'
+    ];
 
-	protected $casts = [
-		'fecha_creacion' => 'datetime',
-		'usuarios_id_usuario' => 'int',
-		'mensajes_id_mensaje' => 'int'
-	];
-
-	protected $fillable = [
-		'estado',
-		'fecha_creacion',
-		'usuarios_id_usuario',
-		'mensajes_id_mensaje'
-	];
+    protected $fillable = [
+        'uuid',
+        'type',
+        'estado',
+        'fecha_creacion',
+        'read_at',
+        'usuarios_id_usuario',
+        'mensajes_id_mensaje',
+        'data'
+    ];
 
 	public function mensaje()
 	{
 		return $this->belongsTo(Mensaje::class, 'mensajes_id_mensaje');
-	}
-
-	public function usuario()
-	{
-		return $this->belongsTo(User::class, 'usuarios_id_usuario');
-	}
+	}    public function usuario()
+    {
+        return $this->belongsTo(User::class, 'usuarios_id_usuario');
+    }
+    
+    /**
+     * Marcar la notificación como leída
+     */
+    public function markAsRead()
+    {
+        if (is_null($this->read_at)) {
+            $this->read_at = now();
+            $this->save();
+        }
+        
+        return $this;
+    }
+    
+    /**
+     * Marcar la notificación como no leída
+     */
+    public function markAsUnread()
+    {
+        if (!is_null($this->read_at)) {
+            $this->read_at = null;
+            $this->save();
+        }
+        
+        return $this;
+    }
+    
+    /**
+     * Determinar si la notificación ha sido leída
+     */
+    public function isRead()
+    {
+        return $this->read_at !== null;
+    }
+    
+    /**
+     * Determinar si la notificación no ha sido leída
+     */
+    public function isUnread()
+    {
+        return $this->read_at === null;
+    }
 }

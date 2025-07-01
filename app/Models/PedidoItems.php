@@ -41,7 +41,13 @@ class PedidoItems extends Model
 		'precio',
 		'subtotal',
 		'pedidos_id_pedido',
-		'productos_id_producto'
+		'productos_id_producto',
+		// 🔧 Campos snapshot para preservar datos históricos
+		'producto_nombre_snapshot',
+		'producto_descripcion_snapshot',
+		'producto_imagen_snapshot',
+		'producto_peso_snapshot',
+		'categoria_nombre_snapshot'
 	];
 
 	public function pedido()

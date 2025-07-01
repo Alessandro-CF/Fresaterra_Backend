@@ -20,33 +20,26 @@ class IsAdmin
     public function handle(Request $request, Closure $next): Response
     {
         try {
-            $user = JWTAuth::parseToken()->authenticate();
-            
+            $user = JWTAuth::parseToken()->authenticate(); // Authenticate the user via token
+
             if (!$user) {
-                return response()->json([
-                    'error' => 'Usuario no encontrado'
-                ], 404);
+                return response()->json(['error' => 'Usuario no autenticado o no encontrado'], 401);
             }
 
-            // Verificar si el usuario es administrador (rol_id = 1)
-            if ($user->roles_id_rol !== 1) {
-                return response()->json([
-                    'error' => 'Acceso denegado. Se requieren permisos de administrador'
-                ], 403);
+            // Check if the user has the admin role (roles_id_rol = 1)
+            if ($user->roles_id_rol === 1) {
+                return $next($request);
+            } else {
+                return response()->json(['error' => 'Acceso denegado. No eres administrador.'], 403);
             }
 
         } catch (TokenExpiredException $e) {
-            return response()->json([
-                'error' => 'Token expirado'
-            ], 401);
+            return response()->json(['error' => 'Token ha expirado'], 401);
         } catch (TokenInvalidException $e) {
-            return response()->json([
-                'error' => 'Token inválido'
-            ], 401);
+            return response()->json(['error' => 'Token es inválido'], 401);
         } catch (JWTException $e) {
-            return response()->json([
-                'error' => 'Token inválido o ausente'
-            ], 401);
+            // This will catch if the token is not present or malformed
+            return response()->json(['error' => 'Token de autorización no encontrado o inválido'], 401);
         }
 
         return $next($request);
