@@ -99,6 +99,33 @@ class AuthController extends Controller
                 ], 401);
             }
 
+            $user = auth()->user();
+
+            // Solo para la ruta de login de administradores
+            if ($request->is('api/v1/admin/login')) {
+                if ($user->roles_id_rol != 1) {
+                    // Invalidar el token recién creado para mayor seguridad
+                    try {
+                        JWTAuth::invalidate($token);
+                    } catch (JWTException $e) {}
+                    return response()->json([
+                        'error' => 'Acceso denegado: solo administradores pueden ingresar.'
+                    ], 403);
+                }
+            }
+
+            // Solo para la ruta de login de clientes (web)
+            if ($request->is('api/v1/login')) {
+                if ($user->roles_id_rol == 1) {
+                    try {
+                        JWTAuth::invalidate($token);
+                    } catch (JWTException $e) {}
+                    return response()->json([
+                        'error' => 'Acceso denegado: solo clientes pueden ingresar en la tienda.'
+                    ], 403);
+                }
+            }
+
             // Obtener el usuario autenticado
             $authenticatedUser = Auth::user();
 
