@@ -173,6 +173,11 @@ Route::prefix('v1')->group(function () {
             Route::get('users/{id}', 'getUserDetails');                   // Obtener detalles de usuario
             Route::patch('users/{id}/reactivate', 'reactivateUser');      // Reactivar usuario
             Route::patch('users/{id}/deactivate', 'adminDeactivateUser'); // Desactivar usuario como admin
+            Route::patch('users/{id}/reset-password', 'adminResetPassword'); // Resetear contraseña como admin
+            
+            // RUTAS ESPECÍFICAS PARA CLIENTES
+            Route::get('clients', 'getClients');                          // Listar solo clientes
+            Route::get('clients/statistics', 'getClientStatistics');      // Estadísticas de clientes
         });
 
         // Gestión de productos (admin)

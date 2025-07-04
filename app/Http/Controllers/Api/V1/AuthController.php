@@ -858,4 +858,206 @@ class AuthController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Listar solo clientes (usuarios con rol 2)
+     * GET /admin/clients
+     */
+    public function getClients(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'query' => 'sometimes|string|min:2|max:100',
+                'estado' => 'sometimes|boolean',
+                'date_from' => 'sometimes|date',
+                'date_to' => 'sometimes|date|after_or_equal:date_from',
+                'per_page' => 'sometimes|integer|min:5|max:100',
+                'sort_by' => 'sometimes|string|in:nombre,apellidos,email,created_at',
+                'sort_direction' => 'sometimes|string|in:asc,desc',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'error' => $validator->errors()
+                ], 422);
+            }
+
+            // Query base: solo usuarios con rol 2 (clientes)
+            $query = User::with('role:id_rol,nombre')
+                ->select('id_usuario', 'nombre', 'apellidos', 'email', 'telefono', 'estado', 'created_at', 'updated_at', 'roles_id_rol')
+                ->where('roles_id_rol', 2); // Solo clientes
+
+            // Filtro de búsqueda por texto
+            if ($request->has('query')) {
+                $searchTerm = $request->get('query');
+                $query->where(function ($q) use ($searchTerm) {
+                    $q->where('nombre', 'like', "%{$searchTerm}%")
+                        ->orWhere('apellidos', 'like', "%{$searchTerm}%")
+                        ->orWhere('email', 'like', "%{$searchTerm}%")
+                        ->orWhere('telefono', 'like', "%{$searchTerm}%");
+                });
+            }
+
+            // Filtro por estado
+            if ($request->has('estado')) {
+                $query->where('estado', $request->get('estado'));
+            }
+
+            // Filtro por fecha de creación
+            if ($request->has('date_from')) {
+                $query->whereDate('created_at', '>=', $request->get('date_from'));
+            }
+
+            if ($request->has('date_to')) {
+                $query->whereDate('created_at', '<=', $request->get('date_to'));
+            }
+
+            // Ordenamiento
+            $sortBy = $request->get('sort_by', 'created_at');
+            $sortDirection = $request->get('sort_direction', 'desc');
+            $query->orderBy($sortBy, $sortDirection);
+
+            // Paginación
+            $perPage = $request->get('per_page', 15);
+            $clients = $query->paginate($perPage);
+
+            return response()->json([
+                'message' => 'Clientes obtenidos exitosamente',
+                'clients' => $clients->items(),
+                'pagination' => [
+                    'current_page' => $clients->currentPage(),
+                    'per_page' => $clients->perPage(),
+                    'total' => $clients->total(),
+                    'last_page' => $clients->lastPage(),
+                    'has_more_pages' => $clients->hasMorePages(),
+                ],
+                'search_params' => $request->only(['query', 'estado', 'date_from', 'date_to']),
+                'statistics' => [
+                    'total_clients' => $clients->total(),
+                    'active_clients' => User::where('roles_id_rol', 2)->where('estado', true)->count(),
+                    'inactive_clients' => User::where('roles_id_rol', 2)->where('estado', false)->count(),
+                ]
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Error al obtener clientes'
+            ], 500);
+        }
+    }
+
+    /**
+     * Obtener estadísticas de clientes
+     * GET /admin/clients/statistics
+     */
+    public function getClientStatistics()
+    {
+        try {
+            $stats = [
+                'total_clients' => User::where('roles_id_rol', 2)->count(),
+                'active_clients' => User::where('roles_id_rol', 2)->where('estado', true)->count(),
+                'inactive_clients' => User::where('roles_id_rol', 2)->where('estado', false)->count(),
+                'new_clients_this_month' => User::where('roles_id_rol', 2)
+                    ->whereMonth('created_at', now()->month)
+                    ->whereYear('created_at', now()->year)
+                    ->count(),
+                'new_clients_this_year' => User::where('roles_id_rol', 2)
+                    ->whereYear('created_at', now()->year)
+                    ->count(),
+            ];
+
+            // Clientes recientes (últimos 10)
+            $recentClients = User::with('role:id_rol,nombre')
+                ->select('id_usuario', 'nombre', 'apellidos', 'email', 'estado', 'created_at')
+                ->where('roles_id_rol', 2)
+                ->orderBy('created_at', 'desc')
+                ->limit(10)
+                ->get();
+
+            return response()->json([
+                'message' => 'Estadísticas de clientes obtenidas exitosamente',
+                'statistics' => $stats,
+                'recent_clients' => $recentClients
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Error al obtener estadísticas de clientes'
+            ], 500);
+        }
+    }
+
+    /**
+     * Resetear contraseña de un usuario (solo admin)
+     * PATCH /admin/users/{id}/reset-password
+     */
+    public function adminResetPassword(Request $request, $userId)
+    {
+        try {
+            $user = User::find($userId);
+
+            if (!$user) {
+                return response()->json([
+                    'error' => 'Usuario no encontrado'
+                ], 404);
+            }
+
+            // Validar que no esté tratando de resetear la contraseña de otro administrador
+            if ($user->roles_id_rol === 1) {
+                return response()->json([
+                    'error' => 'No se puede resetear la contraseña de una cuenta de administrador'
+                ], 403);
+            }
+
+            // Validar entrada opcional (nueva contraseña o usar temporal)
+            $validator = Validator::make($request->all(), [
+                'new_password' => 'sometimes|string|min:10',
+                'reason' => 'sometimes|string|max:255',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'error' => $validator->errors()
+                ], 422);
+            }
+
+            // Generar nueva contraseña temporal o usar la proporcionada
+            $newPassword = $request->get('new_password', 'Temporal123*');
+            
+            // Actualizar la contraseña
+            $user->update([
+                'password' => bcrypt($newPassword)
+            ]);
+
+            // Log de la acción del administrador
+            $admin = JWTAuth::parseToken()->authenticate();
+            Log::info('Admin password reset', [
+                'admin_id' => $admin->id_usuario,
+                'admin_email' => $admin->email,
+                'target_user_id' => $user->id_usuario,
+                'target_user_email' => $user->email,
+                'reason' => $request->get('reason', 'Reset por administrador'),
+                'timestamp' => now()
+            ]);
+
+            return response()->json([
+                'message' => 'Contraseña reseteada exitosamente',
+                'user' => [
+                    'id' => $user->id_usuario,
+                    'nombre' => $user->nombre,
+                    'apellidos' => $user->apellidos,
+                    'email' => $user->email,
+                    'new_password' => $newPassword,
+                    'reset_at' => now(),
+                    'reset_by' => $admin->email
+                ]
+            ], 200);
+        } catch (JWTException $e) {
+            return response()->json([
+                'error' => 'Token inválido'
+            ], 401);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Error al resetear la contraseña'
+            ], 500);
+        }
+    }
 }
