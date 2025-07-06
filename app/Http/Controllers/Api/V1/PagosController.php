@@ -1063,4 +1063,87 @@ class PagosController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Obtener detalles completos de un pago específico (Solo Admin)
+     * GET /admin/payments/{id}/details
+     */
+    public function adminShowPaymentDetails($pagoId)
+    {
+        try {
+            // Buscar el pago con relaciones básicas primero
+            $pago = Pago::with([
+                'pedido.usuario',
+                'metodos_pago'
+            ])->find($pagoId);
+
+            if (!$pago) {
+                return response()->json([
+                    'error' => 'Pago no encontrado'
+                ], 404);
+            }
+
+            // Cargar pedido_items por separado para evitar problemas de relaciones anidadas
+            $pedidoItems = collect();
+            if ($pago->pedido) {
+                $pedidoItems = DB::table('pedido_items')
+                    ->leftJoin('productos', 'pedido_items.productos_id_producto', '=', 'productos.id_producto')
+                    ->leftJoin('categorias', 'productos.categorias_id_categoria', '=', 'categorias.id_categoria')
+                    ->where('pedido_items.pedidos_id_pedido', $pago->pedido->id_pedido)
+                    ->select(
+                        'pedido_items.*',
+                        'productos.nombre as producto_nombre',
+                        'categorias.nombre as categoria_nombre'
+                    )
+                    ->get();
+            }
+
+            // Cargar envíos por separado (sin información del transportista)
+            $envios = collect();
+            if ($pago->pedido) {
+                $envios = DB::table('envios')
+                    ->leftJoin('direcciones', 'envios.direcciones_id_direccion', '=', 'direcciones.id_direccion')
+                    ->where('envios.pedidos_id_pedido', $pago->pedido->id_pedido)
+                    ->select(
+                        'envios.id_envio',
+                        'envios.monto_envio',
+                        'envios.estado',
+                        'envios.fecha_envio',
+                        'envios.direcciones_id_direccion',
+                        'direcciones.calle',
+                        'direcciones.numero',
+                        'direcciones.referencia',
+                        'direcciones.ciudad',
+                        'direcciones.distrito'
+                    )
+                    ->get();
+            }
+
+            // Estructurar la respuesta
+            $response = [
+                'pago' => $pago,
+                'pedido_items' => $pedidoItems,
+                'envios' => $envios
+            ];
+
+            return response()->json([
+                'message' => 'Detalles del pago obtenidos exitosamente',
+                'data' => $response
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error al obtener detalles del pago (Admin): ' . $e->getMessage(), [
+                'pago_id' => $pagoId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'error' => 'Error al obtener detalles del pago',
+                'debug' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
 }

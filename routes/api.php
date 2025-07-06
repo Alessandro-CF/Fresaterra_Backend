@@ -221,9 +221,9 @@ Route::prefix('v1')->group(function () {
 
         // Gestión de pagos (admin)
         Route::controller(PagosController::class)->prefix('admin/payments')->group(function () {
-            Route::get('/', 'getAllPayments');                  // Todos los pagos con filtros
-            Route::get('/statistics', 'getPaymentStatistics');  // Estadísticas de pagos
-            Route::patch('/{id}/status', 'adminUpdateStatus');  // Actualizar estado como admin
+            Route::get('/', 'getAllPayments');                     // Todos los pagos con filtros
+            Route::get('/statistics', 'getPaymentStatistics');     // Estadísticas de pagos
+            Route::get('/{id}/details', 'adminShowPaymentDetails'); // Detalles completos de un pago específico
         });
 
         // Gestión de pedidos (admin)
