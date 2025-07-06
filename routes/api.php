@@ -131,6 +131,11 @@ Route::prefix('v1')->group(function () {
         });
         
         // Gestión de estados de pedidos
+        // Gestión de estado de pedidos para ADMIN
+        Route::prefix('admin/orders')->group(function () {
+            Route::patch('{id}/status', [\App\Http\Controllers\Api\V1\OrderStatusController::class, 'updateStatus']);
+        });
+
         Route::controller(OrderStatusController::class)->prefix('orders')->group(function () {
             Route::get('/{id}/status', 'getStatus');           // Obtener estado de pedido
             Route::patch('/{id}/status', 'updateStatus');      // Actualizar estado de pedido
