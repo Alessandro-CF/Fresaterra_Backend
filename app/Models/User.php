@@ -12,6 +12,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class User extends Authenticatable implements JWTSubject
 {
+    // Accesor para obtener el nombre del rol en minúsculas
+    public function getRolAttribute()
+    {
+        return $this->role ? strtolower($this->role->nombre) : null;
+    }
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable;
 
