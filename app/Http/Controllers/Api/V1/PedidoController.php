@@ -97,15 +97,36 @@ class PedidoController extends Controller
                 return response()->json([
                     'error' => 'Usuario no autenticado'
                 ], 401);
-            }            $pedidos = Pedido::with(['pedido_items.producto', 'pagos.metodos_pago', 'envios.direccion', 'envios.transportista'])
-                            ->where('usuarios_id_usuario', $user->id_usuario)
-                            ->orderBy('fecha_creacion', 'desc')
-                            ->get();
+            }
+
+            // Si el usuario es admin, mostrar todos los pedidos
+            if (isset($user->rol) && ($user->rol === 'admin' || $user->rol === 'superadmin')) {
+                $pedidos = Pedido::with(['pedido_items.producto', 'pagos.metodos_pago', 'envios.direccion', 'envios.transportista'])
+                    ->orderBy('fecha_creacion', 'desc')
+                    ->get();
+            } else {
+                // Usuario normal: solo sus pedidos
+                $pedidos = Pedido::with(['pedido_items.producto', 'pagos.metodos_pago', 'envios.direccion', 'envios.transportista'])
+                    ->where('usuarios_id_usuario', $user->id_usuario)
+                    ->orderBy('fecha_creacion', 'desc')
+                    ->get();
+            }
+
+            // Mapear solo los campos relevantes para la tabla del frontend
+            $pedidosMapped = $pedidos->map(function($pedido) {
+                return [
+                    'id_pedido' => $pedido->id_pedido,
+                    'nombre_usuario' => $pedido->usuario->nombre ?? null,
+                    'estado' => $pedido->estado,
+                    'monto_total' => $pedido->monto_total,
+                    'fecha_creacion' => $pedido->fecha_creacion,
+                ];
+            });
 
             return response()->json([
                 'message' => 'Pedidos obtenidos exitosamente',
-                'orders' => $pedidos,
-                'total' => $pedidos->count()
+                'orders' => $pedidosMapped,
+                'total' => $pedidosMapped->count()
             ], 200);
 
         } catch (JWTException $e) {
@@ -178,6 +199,30 @@ class PedidoController extends Controller
             }
 
             // Validar dirección si es necesario
+            $addressId = null;
+            if ($request->address_info['type'] === 'profile' || $request->address_info['type'] === 'select') {
+                $address = $user->direcciones()->find($request->address_info['address_id']);
+                if (!$address) {
+                    return response()->json([
+                        'error' => 'Dirección no encontrada'
+                    ], 404);
+                }
+                $addressId = $address->id_direccion;
+            } elseif ($request->address_info['type'] === 'new') {
+                // Crear nueva dirección si es necesario
+                $newAddressData = $request->address_info['new_address'];
+                $address = Direccion::create([
+                    'calle' => $newAddressData['calle'],
+                    'numero' => $newAddressData['numero'],
+                    'distrito' => $newAddressData['distrito'],
+                    'ciudad' => $newAddressData['ciudad'],
+                    'referencia' => $newAddressData['referencia'] ?? null,
+                    'predeterminada' => 'no',
+                    'usuarios_id_usuario' => $user->id_usuario
+                ]);
+                $addressId = $address->id_direccion;
+            }
+        
             $addressId = null;
             if ($request->address_info['type'] === 'profile' || $request->address_info['type'] === 'select') {
                 $address = $user->direcciones()->find($request->address_info['address_id']);
@@ -342,15 +387,6 @@ class PedidoController extends Controller
     }
 
     /**
-     * Actualizar el estado de un pedido
-     * PATCH /orders/{id}/status
-     */
-    public function updateStatus(Request $request, $pedidoId)
-    {
-        try {
-            $validator = Validator::make($request->all(), [
-                'estado' => 'required|string|in:pendiente,confirmado,en_preparacion,enviado,entregado,cancelado'
-            ]);
 
             if ($validator->fails()) {
                 return response()->json([
@@ -659,4 +695,7 @@ class PedidoController extends Controller
         
         return $transportistas[$siguienteIndex];
     }
+
 }
+
+
