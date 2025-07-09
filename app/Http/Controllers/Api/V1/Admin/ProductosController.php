@@ -85,7 +85,7 @@ class ProductosController extends Controller
                 'precio' => 'required|numeric|min:0',
                 'stock' => 'sometimes|integer|min:0', // Campo opcional para compatibilidad
                 'peso' => 'required|string|min:3|max:100',
-                'estado' => 'sometimes|in:1,2', // Opcional, por defecto será 1 (activo)
+                'estado' => 'sometimes|in:activo,inactivo', // Opcional, por defecto será 1 (activo)
                 'categorias_id_categoria' => 'required|integer|exists:categorias,id_categoria',
                 'imagen' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
                 'url_imagen' => 'sometimes|string|max:255' // Para compatibilidad con el sistema anterior
@@ -242,7 +242,7 @@ class ProductosController extends Controller
                 'descripcion' => 'required|string|min:10|max:510',
                 'precio' => 'required|numeric|min:0',
                 'peso' => 'required|string|min:3|max:100',
-                'estado' => 'sometimes|in:1,2',
+                'estado' => 'sometimes|in:activo,inactivo',
                 'categorias_id_categoria' => 'required|integer|exists:categorias,id_categoria',
                 'imagen' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
                 'url_imagen' => 'sometimes|string|max:255' // Para compatibilidad
@@ -357,7 +357,7 @@ class ProductosController extends Controller
                 'descripcion' => 'sometimes|string|min:10|max:510',
                 'precio' => 'sometimes|numeric|min:0',
                 'peso' => 'sometimes|string|min:3|max:100',
-                'estado' => 'sometimes|in:1,2',
+                'estado' => 'sometimes|in:activo,inactivo',
                 'categorias_id_categoria' => 'sometimes|integer|exists:categorias,id_categoria',
                 'imagen' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
                 'url_imagen' => 'sometimes|string|max:255'
@@ -475,7 +475,7 @@ class ProductosController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'estado' => 'required|in:1,2'
+            'estado' => 'required|in:activo,inactivo'
         ]);
 
         if ($validator->fails()) {
@@ -488,7 +488,7 @@ class ProductosController extends Controller
         try {
             $producto->update(['estado' => $request->estado]);
 
-            $statusText = $request->estado == 1 ? 'activado' : 'desactivado';
+            $statusText = $request->estado == 'activo' ? 'activado' : 'desactivado';
 
             return response()->json([
                 'message' => "Producto {$statusText} exitosamente",
