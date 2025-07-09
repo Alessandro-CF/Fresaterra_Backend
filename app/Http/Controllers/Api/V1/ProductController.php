@@ -273,25 +273,11 @@ class ProductController extends Controller
                 // OPCIÓN 4: UUID (actual - más seguro pero menos legible)
                 // $nombreImagen = Str::uuid() . '.' . $imagen->getClientOriginalExtension();
 
-                // Log inicial del proceso de subida
-                Log::info('Iniciando proceso de subida de imagen', [
-                    'original_name' => $imagen->getClientOriginalName(),
-                    'generated_name' => $nombreImagen,
-                    'size' => $imagen->getSize(),
-                    'mime_type' => $imagen->getMimeType()
-                ]);
-
                 // Guardar la imagen en storage/app/public/productos
                 $storedPath = $imagen->storeAs('productos', $nombreImagen, 'public');
                 
                 // Verificar que la imagen se guardó correctamente
                 if (!$storedPath) {
-                    Log::error('Error al guardar la imagen en storage', [
-                        'nombre_imagen' => $nombreImagen,
-                        'disk' => 'public',
-                        'path' => 'productos/' . $nombreImagen
-                    ]);
-                    
                     return response()->json([
                         'success' => false,
                         'message' => 'Error al guardar la imagen'
@@ -300,31 +286,18 @@ class ProductController extends Controller
 
                 // Verificar que el archivo existe físicamente
                 $fullPath = storage_path('app/public/productos/' . $nombreImagen);
-                if (!file_exists($fullPath)) {
-                    Log::error('La imagen no existe físicamente después de la subida', [
-                        'expected_path' => $fullPath,
-                        'stored_path' => $storedPath
-                    ]);
-                    
+                if (!file_exists($fullPath)) { 
                     return response()->json([
                         'success' => false,
                         'message' => 'La imagen no se guardó correctamente'
                     ], 500);
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'La imagen es obligatoria',
+                        'errors' => ['url_imagen' => ['El campo url_imagen es obligatorio']]
+                    ], 422);
                 }
-
-                Log::info('Imagen guardada exitosamente', [
-                    'stored_path' => $storedPath,
-                    'full_path' => $fullPath,
-                    'file_size' => filesize($fullPath),
-                    'url_imagen_db' => 'productos/' . $nombreImagen
-                ]);
-                
-            } else {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'La imagen es obligatoria',
-                    'errors' => ['url_imagen' => ['El campo url_imagen es obligatorio']]
-                ], 422);
             }
 
             // Crear el producto

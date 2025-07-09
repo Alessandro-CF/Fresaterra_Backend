@@ -303,8 +303,16 @@ class ProductosController extends Controller
             if (isset($rutaImagen) && 
                 $imagenAnterior && 
                 $imagenAnterior !== 'productos/default.jpg' && 
+                $imagenAnterior !== $rutaImagen && // Evitar eliminar la misma imagen
                 Storage::disk('public')->exists($imagenAnterior)) {
-                Storage::disk('public')->delete($imagenAnterior);
+                
+                try {
+                    Storage::disk('public')->delete($imagenAnterior);
+                    Log::info("Imagen anterior eliminada: {$imagenAnterior}");
+                } catch (\Exception $e) {
+                    Log::warning("No se pudo eliminar imagen anterior: {$imagenAnterior}. Error: " . $e->getMessage());
+                    // No fallar la operación por esto
+                }
             }
 
             return response()->json([
@@ -419,8 +427,16 @@ class ProductosController extends Controller
             if (isset($rutaImagen) && 
                 $imagenAnterior && 
                 $imagenAnterior !== 'productos/default.jpg' && 
+                $imagenAnterior !== $rutaImagen && // Evitar eliminar la misma imagen
                 Storage::disk('public')->exists($imagenAnterior)) {
-                Storage::disk('public')->delete($imagenAnterior);
+                
+                try {
+                    Storage::disk('public')->delete($imagenAnterior);
+                    Log::info("Imagen anterior eliminada: {$imagenAnterior}");
+                } catch (\Exception $e) {
+                    Log::warning("No se pudo eliminar imagen anterior: {$imagenAnterior}. Error: " . $e->getMessage());
+                    // No fallar la operación por esto
+                }
             }
 
             return response()->json([
