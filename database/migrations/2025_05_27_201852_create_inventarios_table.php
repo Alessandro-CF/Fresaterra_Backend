@@ -16,7 +16,7 @@ return new class extends Migration
             $table->integer('cantidad_disponible');
             $table->timestamp('fecha_ingreso');
             $table->timestamp('ultima_actualizacion');
-            $table->string('estado')->default('disponible');
+            $table->enum('estado', ['disponible', 'agotado'])->default('disponible');
             $table->unsignedBigInteger('productos_id_producto');
             $table->foreign('productos_id_producto')->references('id_producto')->on('productos');
             $table->timestamps();

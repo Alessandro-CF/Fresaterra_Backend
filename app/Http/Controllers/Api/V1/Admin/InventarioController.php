@@ -116,10 +116,12 @@ class InventarioController extends Controller
                 ], 404);
             }
 
+
             // Calcular estadísticas del inventario
             $inventarios = $producto->inventarios;
             $stockTotal = $inventarios->sum('cantidad_disponible');
-            $inventariosActivos = $inventarios->where('estado', 'activo')->count();
+            $inventariosDisponibles = $inventarios->where('estado', 'disponible')->count();
+            $inventariosAgotados = $inventarios->where('estado', 'agotado')->count();
             $ultimaActualizacion = $inventarios->max('ultima_actualizacion');
 
             $data = [
@@ -134,7 +136,8 @@ class InventarioController extends Controller
                 'inventario_resumen' => [
                     'stock_total' => $stockTotal,
                     'registros_inventario' => $inventarios->count(),
-                    'inventarios_activos' => $inventariosActivos,
+                    'inventarios_disponibles' => $inventariosDisponibles,
+                    'inventarios_agotados' => $inventariosAgotados,
                     'ultima_actualizacion' => $ultimaActualizacion
                 ],
                 'inventarios_detalle' => $inventarios->map(function ($inventario) {
@@ -171,7 +174,7 @@ class InventarioController extends Controller
             'productos_id_producto' => 'required|integer|exists:productos,id_producto',
             'cantidad_disponible' => 'required|integer|min:0',
             'fecha_ingreso' => 'sometimes|date',
-            'estado' => 'required|in:activo,inactivo,agotado'
+            'estado' => 'required|in:disponible,agotado'
         ]);
 
         if ($validator->fails()) {
@@ -219,7 +222,7 @@ class InventarioController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'cantidad_disponible' => 'required|integer|min:0',
-            'accion' => 'sometimes|in:aumentar,reducir,establecer' // Para diferentes tipos de operaciones
+            'accion' => 'sometimes|in:aumentar,reducir,establecer'
         ]);
 
         if ($validator->fails()) {
@@ -237,25 +240,26 @@ class InventarioController extends Controller
                 ], 404);
             }
 
-            // Buscar el inventario activo del producto o crear uno nuevo
+            // Buscar el inventario más reciente del producto
             $inventario = Inventario::where('productos_id_producto', $productId)
-                ->where('estado', 'activo')
+                ->orderByDesc('id_inventario')
                 ->first();
+
+            $accion = $request->get('accion', 'establecer');
+            $nuevaCantidad = $request->cantidad_disponible;
 
             if (!$inventario) {
                 // Si no existe inventario, crear uno nuevo
+                $estado = $nuevaCantidad > 0 ? 'disponible' : 'agotado';
                 $inventario = Inventario::create([
                     'productos_id_producto' => $productId,
-                    'cantidad_disponible' => $request->cantidad_disponible,
+                    'cantidad_disponible' => $nuevaCantidad,
                     'fecha_ingreso' => now(),
                     'ultima_actualizacion' => now(),
-                    'estado' => 'activo'
+                    'estado' => $estado
                 ]);
             } else {
-                // Actualizar inventario existente
-                $accion = $request->get('accion', 'establecer');
-                $nuevaCantidad = $request->cantidad_disponible;
-
+                // Actualizar inventario existente según la acción
                 switch ($accion) {
                     case 'aumentar':
                         $nuevaCantidad = $inventario->cantidad_disponible + $request->cantidad_disponible;
@@ -265,14 +269,16 @@ class InventarioController extends Controller
                         break;
                     case 'establecer':
                     default:
-                        $nuevaCantidad = $request->cantidad_disponible;
+                        // $nuevaCantidad ya viene del request
                         break;
                 }
+
+                $estado = $nuevaCantidad > 0 ? 'disponible' : 'agotado';
 
                 $inventario->update([
                     'cantidad_disponible' => $nuevaCantidad,
                     'ultima_actualizacion' => now(),
-                    'estado' => $nuevaCantidad > 0 ? 'activo' : 'agotado'
+                    'estado' => $estado
                 ]);
             }
 
@@ -281,7 +287,7 @@ class InventarioController extends Controller
                 'data' => [
                     'producto' => $producto->nombre,
                     'inventario' => $inventario,
-                    'accion_realizada' => $request->get('accion', 'establecer')
+                    'accion_realizada' => $accion
                 ]
             ], 200);
 
@@ -300,7 +306,7 @@ class InventarioController extends Controller
     public function updateStatus(Request $request, $productId)
     {
         $validator = Validator::make($request->all(), [
-            'estado' => 'required|in:activo,inactivo,agotado'
+            'estado' => 'required|in:disponible,agotado'
         ]);
 
         if ($validator->fails()) {
@@ -362,14 +368,15 @@ class InventarioController extends Controller
             $productosConInventario = Producto::whereHas('inventarios')->count();
             $productosSinInventario = $totalProductos - $productosConInventario;
             
+
             // Stock total
-            $stockTotal = Inventario::where('estado', 'activo')->sum('cantidad_disponible');
-            
+            $stockTotal = Inventario::where('estado', 'disponible')->sum('cantidad_disponible');
+
             // Productos con stock bajo (menos de 10 unidades)
-            $stockBajo = Inventario::where('estado', 'activo')
+            $stockBajo = Inventario::where('estado', 'disponible')
                 ->where('cantidad_disponible', '<=', 10)
                 ->count();
-            
+
             // Productos agotados
             $productosAgotados = Inventario::where('estado', 'agotado')
                 ->orWhere('cantidad_disponible', 0)
