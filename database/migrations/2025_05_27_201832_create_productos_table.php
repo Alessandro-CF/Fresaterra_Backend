@@ -17,7 +17,7 @@ return new class extends Migration
             $table->text('descripcion');
             $table->decimal('precio', 10, 2);
             $table->string('url_imagen');
-            $table->string('estado');
+            $table->enum('estado', ['activo', 'inactivo'])->default('activo');
             $table->string('peso');
             $table->timestamp('fecha_creacion')->useCurrent();
             $table->unsignedBigInteger('categorias_id_categoria');
