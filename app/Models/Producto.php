@@ -64,7 +64,7 @@ class Producto extends Model
 		'categorias_id_categoria'
 	];
 
-    protected $appends = ['url_imagen_completa']; // Added from Product.php
+    protected $appends = ['url_imagen_completa', 'imagen_url']; // Added from Product.php
 
     // Don't hide timestamps anymore - we want to track them
     protected $hidden = [];
@@ -128,6 +128,12 @@ class Producto extends Model
     public function getUrlImagenCompletaAttribute(): ?string
     {
         return $this->url_imagen ? url(Storage::url($this->url_imagen)) : null;
+    }
+
+    // Accessor para compatibilidad con frontend
+    public function getImagenUrlAttribute(): ?string
+    {
+        return $this->getUrlImagenCompletaAttribute();
     }
 
     // Scopes from Product.php

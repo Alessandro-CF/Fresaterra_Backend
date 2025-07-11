@@ -106,7 +106,10 @@ class ProductController extends Controller
      */
     public function show(int $id): JsonResponse
     {
-        $producto = Producto::find($id);
+        $producto = Producto::with(['categoria', 'comentarios'])
+            ->withAvg('comentarios', 'calificacion')
+            ->withCount('comentarios')
+            ->find($id);
 
         if (!$producto) {
             return response()->json([
