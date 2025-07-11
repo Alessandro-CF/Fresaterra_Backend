@@ -258,10 +258,22 @@ class ProductosController extends Controller
 
             $data = $validator->validated();
             $imagenAnterior = $producto->url_imagen;
+            
+            Log::info('¿hasFile imagen?', [
+                'hasFile' => $request->hasFile('imagen'),
+                'allFiles' => $request->allFiles(),
+                'all' => $request->all()
+            ]);
 
             // Manejar subida de nueva imagen
             if ($request->hasFile('imagen')) {
                 $imagen = $request->file('imagen');
+               
+                Log::info('¿hasFile imagen?', [
+                    'hasFile' => $request->hasFile('imagen'),
+                    'allFiles' => $request->allFiles(),
+                    'all' => $request->all()
+                ]);
                 
                 // Verificar que el archivo sea válido
                 if (!$imagen->isValid()) {
@@ -373,10 +385,22 @@ class ProductosController extends Controller
 
             $data = $validator->validated();
             $imagenAnterior = $producto->url_imagen;
+            
+            Log::info('¿hasFile imagen?', [
+                'hasFile' => $request->hasFile('imagen'),
+                'allFiles' => $request->allFiles(),
+                'all' => $request->all()
+            ]);
 
             // Manejar subida de nueva imagen
             if ($request->hasFile('imagen')) {
                 $imagen = $request->file('imagen');
+                
+                Log::info('¿hasFile imagen?', [
+                    'hasFile' => $request->hasFile('imagen'),
+                    'allFiles' => $request->allFiles(),
+                    'all' => $request->all()
+                ]);
                 
                 // Verificar que el archivo sea válido
                 if (!$imagen->isValid()) {

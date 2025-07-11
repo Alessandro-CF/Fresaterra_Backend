@@ -1,0 +1,8 @@
+[09-Jul-2025 05:12:56 UTC] PHP Warning:  require(/home/fresater/api.fresaterra.shop/vendor/composer/../symfony/deprecation-contracts/function.php): Failed to open stream: No such file or directory in /home/fresater/api.fresaterra.shop/vendor/composer/autoload_real.php on line 41
+[09-Jul-2025 05:12:56 UTC] PHP Fatal error:  Uncaught Error: Failed opening required '/home/fresater/api.fresaterra.shop/vendor/composer/../symfony/deprecation-contracts/function.php' (include_path='.:/opt/cpanel/ea-php82/root/usr/share/pear') in /home/fresater/api.fresaterra.shop/vendor/composer/autoload_real.php:41
+Stack trace:
+#0 /home/fresater/api.fresaterra.shop/vendor/composer/autoload_real.php(45): {closure}('6e3fae29631ef28...', '/home/fresater/...')
+#1 /home/fresater/api.fresaterra.shop/vendor/autoload.php(22): ComposerAutoloaderInit28a7158b47f62b2e4aa09ed2181c7490::getLoader()
+#2 /home/fresater/api.fresaterra.shop/public/index.php(14): require('/home/fresater/...')
+#3 {main}
+  thrown in /home/fresater/api.fresaterra.shop/vendor/composer/autoload_real.php on line 41

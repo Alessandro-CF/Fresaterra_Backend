@@ -190,6 +190,7 @@ Route::prefix('v1')->group(function () {
             Route::patch('products/{id}', 'partialUpdate');            // Actualización parcial
             Route::patch('products/{id}/status', 'updateStatus');      // Cambiar estado
             Route::delete('products/{id}', 'destroy');                 // Eliminar producto
+            Route::post('products/{id}/update-image', 'update')->name('products.updateImage'); // Actualizar imágen
         });
 
         // Gestión de categorías (admin)
