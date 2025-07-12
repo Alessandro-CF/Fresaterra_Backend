@@ -232,6 +232,8 @@ Route::prefix('v1')->group(function () {
         // Gestión de reportes de ventas (admin)
         Route::controller(ReporteVentasController::class)->prefix('admin')->group(function () {
             Route::get('reports/ventas-resumen', 'ventasResumen');             // Resumen de ventas en tiempo real
+            Route::get('reports/data/charts', 'getChartsData');                // Datos optimizados para gráficos
+            Route::get('reports/data/kpis', 'getKPIs');                        // KPIs para dashboard
             Route::post('reports', 'store');                                   // Crear reporte de ventas (asíncrono)
             Route::get('reports', 'index');                                    // Obtener historial de reportes
             Route::get('reports/{id_reporte}', 'show');                        // Obtener detalles de un reporte

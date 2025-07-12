@@ -529,4 +529,298 @@ class ReporteVentasController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Obtener datos específicos para gráficos y visualizaciones
+     * GET /api/v1/admin/reports/data/charts?fecha_inicio=YYYY-MM-DD&fecha_fin=YYYY-MM-DD&tipo=ventas_diarias
+     */
+    public function getChartsData(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'fecha_inicio' => 'required|date',
+            'fecha_fin' => 'required|date|after_or_equal:fecha_inicio',
+            'tipo' => 'required|in:ventas_diarias,ventas_mensuales,productos_vendidos,estados_pedidos'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'mensaje' => 'Solicitud incorrecta',
+                'errores' => $validator->errors()
+            ], 400);
+        }
+
+        try {
+            $fechaInicio = $request->fecha_inicio;
+            $fechaFin = $request->fecha_fin;
+            $tipo = $request->tipo;
+
+            $data = [];
+
+            switch ($tipo) {
+                case 'ventas_diarias':
+                    $data = $this->getVentasDiariasChart($fechaInicio, $fechaFin);
+                    break;
+                
+                case 'ventas_mensuales':
+                    $data = $this->getVentasMensualesChart($fechaInicio, $fechaFin);
+                    break;
+                
+                case 'productos_vendidos':
+                    $data = $this->getTopProductosChart($fechaInicio, $fechaFin);
+                    break;
+                
+                case 'estados_pedidos':
+                    $data = $this->getEstadosPedidosChart($fechaInicio, $fechaFin);
+                    break;
+            }
+
+            return response()->json([
+                'mensaje' => 'Datos de gráfico obtenidos exitosamente',
+                'tipo' => $tipo,
+                'periodo' => [
+                    'fecha_inicio' => $fechaInicio,
+                    'fecha_fin' => $fechaFin
+                ],
+                'data' => $data
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error al obtener datos de gráfico: ' . $e->getMessage());
+            return response()->json([
+                'mensaje' => 'Error interno del servidor'
+            ], 500);
+        }
+    }
+
+    /**
+     * Datos optimizados para gráfico de ventas diarias
+     */
+    private function getVentasDiariasChart($fechaInicio, $fechaFin)
+    {
+        $ventas = Pago::where('estado_pago', 'aprobado')
+            ->whereBetween('fecha_pago', [$fechaInicio, $fechaFin])
+            ->selectRaw('DATE(fecha_pago) as fecha, SUM(monto_pago) as total, COUNT(*) as transacciones')
+            ->groupBy('fecha')
+            ->orderBy('fecha')
+            ->get();
+
+        return [
+            'labels' => $ventas->pluck('fecha')->toArray(),
+            'datasets' => [
+                [
+                    'label' => 'Ventas Diarias',
+                    'data' => $ventas->pluck('total')->toArray(),
+                    'backgroundColor' => 'rgba(54, 162, 235, 0.2)',
+                    'borderColor' => 'rgba(54, 162, 235, 1)',
+                    'borderWidth' => 2
+                ],
+                [
+                    'label' => 'Transacciones',
+                    'data' => $ventas->pluck('transacciones')->toArray(),
+                    'backgroundColor' => 'rgba(255, 99, 132, 0.2)',
+                    'borderColor' => 'rgba(255, 99, 132, 1)',
+                    'borderWidth' => 2,
+                    'yAxisID' => 'y1'
+                ]
+            ]
+        ];
+    }
+
+    /**
+     * Datos optimizados para gráfico de top productos
+     */
+    private function getTopProductosChart($fechaInicio, $fechaFin)
+    {
+        $productos = Pedido::whereBetween('pedidos.fecha_creacion', [$fechaInicio, $fechaFin])
+            ->join('pedido_items', 'pedidos.id_pedido', '=', 'pedido_items.pedidos_id_pedido')
+            ->join('productos', 'pedido_items.productos_id_producto', '=', 'productos.id_producto')
+            ->selectRaw('productos.nombre, SUM(pedido_items.cantidad) as total_vendidos, SUM(pedido_items.cantidad * productos.precio) as ingresos')
+            ->groupBy('productos.id_producto', 'productos.nombre')
+            ->orderByDesc('total_vendidos')
+            ->limit(10)
+            ->get();
+
+        return [
+            'labels' => $productos->pluck('nombre')->toArray(),
+            'datasets' => [
+                [
+                    'label' => 'Unidades Vendidas',
+                    'data' => $productos->pluck('total_vendidos')->toArray(),
+                    'backgroundColor' => [
+                        '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
+                        '#FF9F40', '#FF6384', '#C9CBCF', '#4BC0C0', '#FF6384'
+                    ]
+                ]
+            ]
+        ];
+    }
+
+    /**
+     * Datos optimizados para gráfico de estados de pedidos
+     */
+    private function getEstadosPedidosChart($fechaInicio, $fechaFin)
+    {
+        $estados = Pedido::whereBetween('fecha_creacion', [$fechaInicio, $fechaFin])
+            ->selectRaw('estado, COUNT(*) as cantidad')
+            ->groupBy('estado')
+            ->get();
+
+        return [
+            'labels' => $estados->pluck('estado')->toArray(),
+            'datasets' => [
+                [
+                    'data' => $estados->pluck('cantidad')->toArray(),
+                    'backgroundColor' => [
+                        '#28a745', // completado - verde
+                        '#ffc107', // pendiente - amarillo
+                        '#dc3545', // cancelado - rojo
+                        '#17a2b8', // en_proceso - azul
+                        '#6c757d'  // otros - gris
+                    ]
+                ]
+            ]
+        ];
+    }
+
+    /**
+     * Datos optimizados para gráfico de ventas mensuales
+     */
+    private function getVentasMensualesChart($fechaInicio, $fechaFin)
+    {
+        $ventas = Pago::where('estado_pago', 'aprobado')
+            ->whereBetween('fecha_pago', [$fechaInicio, $fechaFin])
+            ->selectRaw('YEAR(fecha_pago) as año, MONTH(fecha_pago) as mes, SUM(monto_pago) as total')
+            ->groupBy('año', 'mes')
+            ->orderBy('año')
+            ->orderBy('mes')
+            ->get();
+
+        $labels = $ventas->map(function($venta) {
+            return $venta->año . '-' . str_pad($venta->mes, 2, '0', STR_PAD_LEFT);
+        });
+
+        return [
+            'labels' => $labels->toArray(),
+            'datasets' => [
+                [
+                    'label' => 'Ventas Mensuales',
+                    'data' => $ventas->pluck('total')->toArray(),
+                    'backgroundColor' => 'rgba(75, 192, 192, 0.2)',
+                    'borderColor' => 'rgba(75, 192, 192, 1)',
+                    'borderWidth' => 2,
+                    'fill' => true
+                ]
+            ]
+        ];
+    }
+
+    /**
+     * Obtener KPIs (indicadores clave) para el dashboard
+     * GET /api/v1/admin/reports/kpis?fecha_inicio=YYYY-MM-DD&fecha_fin=YYYY-MM-DD
+     */
+    public function getKPIs(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'fecha_inicio' => 'required|date',
+            'fecha_fin' => 'required|date|after_or_equal:fecha_inicio',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'mensaje' => 'Solicitud incorrecta',
+                'errores' => $validator->errors()
+            ], 400);
+        }
+
+        try {
+            $fechaInicio = $request->fecha_inicio;
+            $fechaFin = $request->fecha_fin;
+
+            // KPIs principales
+            $totalVentas = Pago::where('estado_pago', 'aprobado')
+                ->whereBetween('fecha_pago', [$fechaInicio, $fechaFin])
+                ->sum('monto_pago');
+
+            $totalPedidos = Pedido::whereBetween('fecha_creacion', [$fechaInicio, $fechaFin])->count();
+            
+            $ticketPromedio = $totalPedidos > 0 ? round($totalVentas / $totalPedidos, 2) : 0;
+
+            $crecimientoVentas = $this->calcularCrecimientoVentas($fechaInicio, $fechaFin);
+
+            return response()->json([
+                'mensaje' => 'KPIs obtenidos exitosamente',
+                'data' => [
+                    'total_ventas' => [
+                        'valor' => $totalVentas,
+                        'formato' => 'currency',
+                        'crecimiento' => $crecimientoVentas['ventas']
+                    ],
+                    'total_pedidos' => [
+                        'valor' => $totalPedidos,
+                        'formato' => 'number',
+                        'crecimiento' => $crecimientoVentas['pedidos']
+                    ],
+                    'ticket_promedio' => [
+                        'valor' => $ticketPromedio,
+                        'formato' => 'currency'
+                    ],
+                    'conversion_rate' => [
+                        'valor' => $this->calcularTasaConversion($fechaInicio, $fechaFin),
+                        'formato' => 'percentage'
+                    ]
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error al obtener KPIs: ' . $e->getMessage());
+            return response()->json([
+                'mensaje' => 'Error interno del servidor'
+            ], 500);
+        }
+    }
+
+    /**
+     * Calcular crecimiento comparando con el periodo anterior
+     */
+    private function calcularCrecimientoVentas($fechaInicio, $fechaFin)
+    {
+        // Calcular duración del periodo actual
+        $diasPeriodo = \Carbon\Carbon::parse($fechaInicio)->diffInDays(\Carbon\Carbon::parse($fechaFin)) + 1;
+        
+        // Periodo anterior
+        $fechaInicioAnterior = \Carbon\Carbon::parse($fechaInicio)->subDays($diasPeriodo)->format('Y-m-d');
+        $fechaFinAnterior = \Carbon\Carbon::parse($fechaInicio)->subDay()->format('Y-m-d');
+
+        // Ventas periodo actual
+        $ventasActuales = Pago::where('estado_pago', 'aprobado')
+            ->whereBetween('fecha_pago', [$fechaInicio, $fechaFin])
+            ->sum('monto_pago');
+
+        // Ventas periodo anterior
+        $ventasAnteriores = Pago::where('estado_pago', 'aprobado')
+            ->whereBetween('fecha_pago', [$fechaInicioAnterior, $fechaFinAnterior])
+            ->sum('monto_pago');
+
+        // Pedidos
+        $pedidosActuales = Pedido::whereBetween('fecha_creacion', [$fechaInicio, $fechaFin])->count();
+        $pedidosAnteriores = Pedido::whereBetween('fecha_creacion', [$fechaInicioAnterior, $fechaFinAnterior])->count();
+
+        return [
+            'ventas' => $ventasAnteriores > 0 ? round((($ventasActuales - $ventasAnteriores) / $ventasAnteriores) * 100, 2) : 0,
+            'pedidos' => $pedidosAnteriores > 0 ? round((($pedidosActuales - $pedidosAnteriores) / $pedidosAnteriores) * 100, 2) : 0
+        ];
+    }
+
+    /**
+     * Calcular tasa de conversión
+     */
+    private function calcularTasaConversion($fechaInicio, $fechaFin)
+    {
+        $carritosCreados = Carrito::whereBetween('fecha_creacion', [$fechaInicio, $fechaFin])->count();
+        $pedidosCompletados = Pedido::whereBetween('fecha_creacion', [$fechaInicio, $fechaFin])
+            ->where('estado', 'completado')
+            ->count();
+
+        return $carritosCreados > 0 ? round(($pedidosCompletados / $carritosCreados) * 100, 2) : 0;
+    }
 }
