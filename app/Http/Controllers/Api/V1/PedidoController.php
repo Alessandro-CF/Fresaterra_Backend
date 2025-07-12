@@ -101,18 +101,18 @@ class PedidoController extends Controller
 
             // Si el usuario es admin, mostrar todos los pedidos
             if (isset($user->rol) && ($user->rol === 'admin' || $user->rol === 'superadmin')) {
-                $pedidos = Pedido::with(['pedido_items.producto', 'pagos.metodos_pago', 'envios.direccion', 'envios.transportista'])
+                $pedidos = Pedido::with(['pedido_items.producto', 'pagos.metodos_pago', 'envios.direccion', 'envios.transportista', 'usuario'])
                     ->orderBy('fecha_creacion', 'desc')
                     ->get();
             } else {
                 // Usuario normal: solo sus pedidos
-                $pedidos = Pedido::with(['pedido_items.producto', 'pagos.metodos_pago', 'envios.direccion', 'envios.transportista'])
+                $pedidos = Pedido::with(['pedido_items.producto', 'pagos.metodos_pago', 'envios.direccion', 'envios.transportista', 'usuario'])
                     ->where('usuarios_id_usuario', $user->id_usuario)
                     ->orderBy('fecha_creacion', 'desc')
                     ->get();
             }
 
-            // Mapear solo los campos relevantes para la tabla del frontend
+            // Mapear datos completos necesarios para el frontend (incluyendo envíos y pagos)
             $pedidosMapped = $pedidos->map(function($pedido) {
                 return [
                     'id_pedido' => $pedido->id_pedido,
@@ -120,8 +120,28 @@ class PedidoController extends Controller
                     'estado' => $pedido->estado,
                     'monto_total' => $pedido->monto_total,
                     'fecha_creacion' => $pedido->fecha_creacion,
+                    // 🔧 AGREGADO: Incluir datos de envío y pago para mostrar estados correctos
+                    'envio' => $pedido->envios->first(), // Primer envío
+                    'envios' => $pedido->envios, // Todos los envíos (por compatibilidad)
+                    'pago' => $pedido->pagos->first(), // Primer pago  
+                    'pagos' => $pedido->pagos, // Todos los pagos (por compatibilidad)
+                    'detalles' => $pedido->pedido_items, // Items del pedido
+                    'pedido_items' => $pedido->pedido_items, // Por compatibilidad
                 ];
             });
+
+            // 🔧 DEBUG: Log para verificar los datos que se envían al frontend
+            Log::info('Pedidos enviados al frontend', [
+                'total_pedidos' => $pedidosMapped->count(),
+                'primer_pedido_debug' => $pedidosMapped->first() ? [
+                    'id' => $pedidosMapped->first()['id_pedido'],
+                    'estado_pedido' => $pedidosMapped->first()['estado'],
+                    'tiene_envio' => !empty($pedidosMapped->first()['envio']),
+                    'estado_envio' => $pedidosMapped->first()['envio']['estado'] ?? 'sin estado',
+                    'tiene_pago' => !empty($pedidosMapped->first()['pago']),
+                    'estado_pago' => $pedidosMapped->first()['pago']['estado_pago'] ?? 'sin estado'
+                ] : 'no hay pedidos'
+            ]);
 
             return response()->json([
                 'message' => 'Pedidos obtenidos exitosamente',
@@ -448,12 +468,35 @@ class PedidoController extends Controller
                 ], 400);
             }
 
-            $pedido->update(['estado' => 'cancelado']);
+            DB::beginTransaction();
+            
+            try {
+                // Actualizar el estado del pedido a cancelado
+                $pedido->update(['estado' => 'cancelado']);
 
-            return response()->json([
-                'message' => 'Pedido cancelado exitosamente',
-                'order' => $pedido
-            ], 200);
+                // Cancelar pagos asociados que estén pendientes
+                Pago::where('pedidos_id_pedido', $pedidoId)
+                    ->whereIn('estado_pago', ['pendiente'])
+                    ->update(['estado_pago' => 'cancelado']);
+
+                // Cancelar envíos asociados que estén pendientes o confirmados
+                Envio::where('pedidos_id_pedido', $pedidoId)
+                    ->whereIn('estado', ['pendiente', 'confirmado'])
+                    ->update(['estado' => 'cancelado']);
+
+                DB::commit();
+
+                Log::info("Pedido {$pedidoId} cancelado exitosamente por usuario {$user->id_usuario}");
+
+                return response()->json([
+                    'message' => 'Pedido cancelado exitosamente',
+                    'order' => $pedido->fresh() // Recargar el pedido con los cambios
+                ], 200);
+                
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
+            }
 
         } catch (JWTException $e) {
             return response()->json([

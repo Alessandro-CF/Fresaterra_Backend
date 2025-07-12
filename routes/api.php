@@ -147,12 +147,13 @@ Route::prefix('v1')->group(function () {
         });
         Route::controller(OrderStatusController::class)->prefix('orders')->group(function () {
             Route::get('/{id}/status', 'getStatus');           // Obtener estado de pedido
-            Route::post('/{id}/resume', 'resumeOrder');        // Reanudar un pedido abandonado
+            Route::patch('/{id}/status', 'updateStatus');      // Actualizar estado de pedido
+            Route::post('/{id}/resume', 'resumeOrder');        // Reanudar un pedido pendiente
         });
     });
 
-    // * RUTA ESPECIAL PARA ABANDONO (Sin autenticación estricta)
-    Route::post('orders/{id}/mark-abandoned', [OrderStatusController::class, 'markAsAbandoned']);
+    // * RUTA ESPECIAL PARA ABANDONO (Ya no se usa - los pedidos permanecen en pendiente)
+    // Route::post('orders/{id}/mark-abandoned', [OrderStatusController::class, 'markAsAbandoned']);
 
     // * RUTAS DE ADMINISTRADOR (JWT + Admin)
 

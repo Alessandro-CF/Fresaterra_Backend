@@ -102,7 +102,7 @@ class PagosController extends Controller
                 'metodo_pago_id' => 'required|integer|exists:metodos_pago,id_metodo_pago',
                 'monto_pago' => 'required|numeric|min:0.01',
                 'referencia_pago' => 'nullable|string|max:255',
-                'estado_pago' => 'sometimes|string|in:pendiente,completado,fallido,cancelado'
+                'estado_pago' => 'sometimes|string|in:pendiente,completado,cancelado'
             ]);
 
             if ($validator->fails()) {
@@ -284,7 +284,7 @@ class PagosController extends Controller
     {
         try {
             $validator = Validator::make($request->all(), [
-                'estado_pago' => 'required|string|in:pendiente,completado,fallido,cancelado',
+                'estado_pago' => 'required|string|in:pendiente,completado,cancelado',
                 'referencia_pago' => 'nullable|string|max:255'
             ]);
 
@@ -319,7 +319,7 @@ class PagosController extends Controller
                 // Actualizar el estado del pedido según el estado del pago
                 if ($request->estado_pago === 'completado') {
                     $pago->pedido->update(['estado' => 'pagado']);
-                } elseif ($request->estado_pago === 'fallido' || $request->estado_pago === 'cancelado') {
+                } elseif ($request->estado_pago === 'cancelado') {
                     $pago->pedido->update(['estado' => 'cancelado']);
                 }
 
@@ -383,14 +383,14 @@ class PagosController extends Controller
                 ], 404);
             }
 
-            // Buscar el pago existente para este pedido (incluyendo abandonados para pedidos reanudados)
+            // Buscar el pago existente para este pedido
             $pago = Pago::where('pedidos_id_pedido', $orderId)
-                       ->whereIn('estado_pago', ['pendiente', 'abandonado'])
+                       ->where('estado_pago', 'pendiente')
                        ->first();
 
             if (!$pago) {
                 return response()->json([
-                    'error' => 'Pago pendiente o abandonado no encontrado'
+                    'error' => 'Pago pendiente no encontrado'
                 ], 404);
             }
 
@@ -401,7 +401,7 @@ class PagosController extends Controller
                 $estadoPago = match($request->status) {
                     'approved' => 'completado',
                     'pending' => 'pendiente',
-                    'rejected', 'cancelled' => 'fallido',
+                    'rejected', 'cancelled' => 'cancelado',
                     default => 'pendiente'
                 };
 
@@ -421,7 +421,7 @@ class PagosController extends Controller
                     // Crear registro de envío automáticamente
                     $this->createShippingRecord($pedido);
                     
-                } elseif ($estadoPago === 'fallido') {
+                } elseif ($estadoPago === 'cancelado') {
                     $pedido->update([
                         'estado' => 'cancelado'
                     ]);
@@ -547,7 +547,7 @@ class PagosController extends Controller
                     'total_amount' => $pagos->where('estado_pago', 'completado')->sum('monto_pago'),
                     'pending_payments' => $pagos->where('estado_pago', 'pendiente')->count(),
                     'completed_payments' => $pagos->where('estado_pago', 'completado')->count(),
-                    'failed_payments' => $pagos->where('estado_pago', 'fallido')->count()
+                    'cancelled_payments' => $pagos->where('estado_pago', 'cancelado')->count()
                 ]
             ], 200);
 
@@ -570,7 +570,7 @@ class PagosController extends Controller
                     'total_payments' => Pago::count(),
                     'total_amount' => Pago::where('estado_pago', 'completado')->sum('monto_pago'),
                     'pending_amount' => Pago::where('estado_pago', 'pendiente')->sum('monto_pago'),
-                    'failed_payments' => Pago::where('estado_pago', 'fallido')->count()
+                    'failed_payments' => Pago::where('estado_pago', 'cancelado')->count()
                 ],
                 'by_status' => Pago::selectRaw('estado_pago, count(*) as count, sum(monto_pago) as total_amount')
                     ->groupBy('estado_pago')
@@ -839,14 +839,14 @@ class PagosController extends Controller
                 ], 404);
             }
 
-            // Buscar el pago pendiente o abandonado para este pedido (para pedidos reanudados)
+            // Buscar el pago pendiente para este pedido
             $pago = Pago::where('pedidos_id_pedido', $orderId)
-                       ->whereIn('estado_pago', ['pendiente', 'abandonado'])
+                       ->where('estado_pago', 'pendiente')
                        ->first();
 
             if (!$pago) {
                 return response()->json([
-                    'error' => 'Pago pendiente o abandonado no encontrado'
+                    'error' => 'Pago pendiente no encontrado'
                 ], 404);
             }
 
@@ -860,7 +860,7 @@ class PagosController extends Controller
                 $estadoPago = match($paymentStatus) {
                     'approved' => 'completado',
                     'pending' => 'pendiente',
-                    'rejected', 'cancelled' => 'fallido',
+                    'rejected', 'cancelled' => 'cancelado',
                     default => 'pendiente'
                 };
 
@@ -882,7 +882,7 @@ class PagosController extends Controller
                         $envio->update(['estado' => 'confirmado']);
                     }
                     
-                } elseif ($estadoPago === 'fallido') {
+                } elseif ($estadoPago === 'cancelado') {
                     $pedido->update(['estado' => 'cancelado']);
                     
                     // Cancelar envío si existe
@@ -987,8 +987,8 @@ class PagosController extends Controller
                     'request_data' => $request->all()
                 ]);
 
-                // Actualizar si el pago está pendiente o abandonado (para pedidos reanudados)
-                if (in_array($pago->estado_pago, ['pendiente', 'abandonado'])) {
+                // Actualizar si el pago está pendiente
+                if ($pago->estado_pago === 'pendiente') {
                     $estadoPagoAnterior = $pago->estado_pago;
                     
                     // Generar referencia_pago en el formato correcto
@@ -1006,23 +1006,34 @@ class PagosController extends Controller
                     // Actualizar el estado del pedido a confirmado (tanto para pedidos normales como reanudados)
                     $pedidoUpdated = $pedido->update(['estado' => 'confirmado']);
 
+                    // 🔧 CORREGIR: Actualizar estado del envío a confirmado
+                    $envio = Envio::where('pedidos_id_pedido', $orderId)->first();
+                    $envioUpdated = false;
+                    if ($envio) {
+                        $envioUpdated = $envio->update(['estado' => 'confirmado']);
+                    }
+
                     // Verificar que las actualizaciones se aplicaron
                     $pagoFresh = $pago->fresh();
                     $pedidoFresh = $pedido->fresh();
+                    $envioFresh = $envio ? $envio->fresh() : null;
 
                     Log::info('Pago confirmado exitosamente desde la página de éxito', [
                         'pedido_id' => $orderId,
                         'payment_id' => $request->payment_id,
                         'user_id' => $user->id_usuario,
                         'referencia_pago' => $referencePago,
-                        'was_resumed' => $estadoPagoAnterior === 'abandonado',
+                        'was_resumed' => false,
                         'estado_pago_anterior' => $estadoPagoAnterior,
                         'pedido_estado_nuevo' => 'confirmado',
                         'pago_estado_nuevo' => 'completado',
+                        'envio_estado_nuevo' => 'confirmado',
                         'pago_update_result' => $pagoUpdated,
                         'pedido_update_result' => $pedidoUpdated,
+                        'envio_update_result' => $envioUpdated,
                         'pago_fresh_estado' => $pagoFresh ? $pagoFresh->estado_pago : 'null',
-                        'pedido_fresh_estado' => $pedidoFresh ? $pedidoFresh->estado : 'null'
+                        'pedido_fresh_estado' => $pedidoFresh ? $pedidoFresh->estado : 'null',
+                        'envio_fresh_estado' => $envioFresh ? $envioFresh->estado : 'null'
                     ]);
                 } else {
                     Log::warning('Pago ya procesado anteriormente o estado no válido', [
@@ -1040,6 +1051,7 @@ class PagosController extends Controller
                     'order_id' => $orderId,
                     'payment_status' => $pago->fresh()->estado_pago,
                     'order_status' => $pedido->fresh()->estado,
+                    'shipping_status' => $envio ? $envio->fresh()->estado : null,
                     'referencia_pago' => $pago->fresh()->referencia_pago
                 ], 200);
 
