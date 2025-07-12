@@ -14,8 +14,11 @@ return new class extends Migration
         Schema::create('reportes', function (Blueprint $table) {
             $table->id('id_reporte');
             $table->string('tipo');
-            $table->string('archivo_url');
+            $table->enum('estado', ['en_proceso', 'generado', 'fallido', 'cancelado'])->default('en_proceso');
+            $table->string('archivo_url')->nullable();
             $table->timestamp('fecha_creacion')->useCurrent();
+            $table->date('fecha_inicio')->nullable();
+            $table->date('fecha_fin')->nullable();
             $table->unsignedBigInteger('usuarios_id_usuario');
             $table->foreign('usuarios_id_usuario')->references('id_usuario')->on('users');
             $table->timestamps();

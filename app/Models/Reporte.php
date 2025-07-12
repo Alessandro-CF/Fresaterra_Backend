@@ -14,8 +14,11 @@ use Illuminate\Database\Eloquent\Model;
  * 
  * @property int $id_reporte
  * @property string $tipo
- * @property string $archivo_url
+ * @property string|null $archivo_url
  * @property Carbon $fecha_creacion
+ * @property string $estado
+ * @property string|null $fecha_inicio
+ * @property string|null $fecha_fin
  * @property int $usuarios_id_usuario
  * 
  * @property Usuario $usuario
@@ -29,13 +32,18 @@ class Reporte extends Model
 
 	protected $casts = [
 		'fecha_creacion' => 'datetime',
+		'fecha_inicio' => 'date',
+		'fecha_fin' => 'date',
 		'usuarios_id_usuario' => 'int'
 	];
 
 	protected $fillable = [
 		'tipo',
+		'estado',
 		'archivo_url',
 		'fecha_creacion',
+		'fecha_inicio',
+		'fecha_fin',
 		'usuarios_id_usuario'
 	];
 

@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\V1\ComentariosController;
 use App\Http\Controllers\Api\V1\Admin\ProductosController;
 use App\Http\Controllers\Api\V1\Admin\CategoriasController;
 use App\Http\Controllers\Api\V1\Admin\InventarioController;
+use App\Http\Controllers\Api\V1\Admin\ReporteVentasController;
 use App\Http\Controllers\Api\V1\CartController;
 use App\Http\Controllers\Api\V1\NotificacionController;
 use App\Http\Controllers\Api\V1\OrderStatusController;
@@ -226,6 +227,19 @@ Route::prefix('v1')->group(function () {
             Route::post('inventory', 'store');                                 // Crear registro inventario
             Route::patch('inventory/products/{id}/stock', 'updateStock');      // Actualizar stock
             Route::patch('inventory/products/{id}/status', 'updateStatus');    // Cambiar estado inventario
+        });
+
+        // Gestión de reportes de ventas (admin)
+        Route::controller(ReporteVentasController::class)->prefix('admin')->group(function () {
+            Route::get('reports/ventas-resumen', 'ventasResumen');             // Resumen de ventas en tiempo real
+            Route::post('reports', 'store');                                   // Crear reporte de ventas (asíncrono)
+            Route::get('reports', 'index');                                    // Obtener historial de reportes
+            Route::get('reports/{id_reporte}', 'show');                        // Obtener detalles de un reporte
+            Route::get('reports/{id_reporte}/generate', 'generateReport');     // Generar reporte inmediatamente
+            Route::get('reports/{id_reporte}/download', 'downloadReport');     // Descargar reporte
+            Route::patch('reports/{id_reporte}/status', 'updateStatus');       // Cambiar estado de un reporte
+            Route::patch('reports/{id_reporte}/complete', 'markAsCompleted');  // Marcar reporte como completado
+            Route::delete('reports/{id_reporte}', 'destroy');                  // Eliminar un reporte
         });
 
         // Gestión de direcciones (admin)
