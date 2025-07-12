@@ -426,10 +426,29 @@ class ReporteVentasController extends Controller
                 ], 404);
             }
 
+            // Guardar información del reporte antes de eliminarlo
+            $tipoReporte = $reporte->tipo;
+            $fechaCreacion = $reporte->fecha_creacion;
+            
+            // Opcional: Eliminar también el archivo del storage si existe
+            if ($reporte->archivo_url) {
+                $rutaArchivo = str_replace(asset('storage/'), '', $reporte->archivo_url);
+                if (Storage::disk('public')->exists($rutaArchivo)) {
+                    Storage::disk('public')->delete($rutaArchivo);
+                }
+            }
+
             $reporte->delete();
+            
             return response()->json([
-                'mensaje' => 'Reporte eliminado permanentemente'
-            ], 204);
+                'mensaje' => 'Reporte eliminado exitosamente',
+                'data' => [
+                    'id_reporte' => $id_reporte,
+                    'tipo' => $tipoReporte,
+                    'fecha_creacion' => $fechaCreacion,
+                    'fecha_eliminacion' => now()->toISOString()
+                ]
+            ], 200);
         } catch (\Exception $e) {
             Log::error('Error al eliminar reporte: ' . $e->getMessage());
             return response()->json([
