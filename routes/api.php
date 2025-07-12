@@ -109,6 +109,16 @@ Route::prefix('v1')->group(function () {
         // Pagos (requiere autenticación)
         Route::post('create-preference', [MercadoPagoController::class, 'createPreference']);
 
+        // Gestión de pedidos del usuario
+        Route::controller(PedidoController::class)->prefix('pedidos')->group(function () {
+            Route::get('/', 'index'); // Listar pedidos (GET /api/v1/pedidos)
+            Route::patch('/{id}', 'update'); // Actualizar estado de pedido (PATCH /api/v1/pedidos/{id})
+        });
+        Route::controller(\App\Http\Controllers\Api\V1\Admin\PedidoController::class)->prefix('admin/pedidos')->group(function () {
+            Route::get('/', 'index'); // Listar todos los pedidos
+            Route::get('/{id}', 'show'); // Mostrar un pedido específico
+        });
+
         // Gestión de pagos del usuario
         Route::controller(PagosController::class)->prefix('payments')->group(function () {
             Route::get('methods', 'getPaymentMethods');          // Métodos de pago activos
@@ -131,15 +141,19 @@ Route::prefix('v1')->group(function () {
         });
         
         // Gestión de estados de pedidos
+        // Gestión de estado de pedidos para ADMIN
+        Route::prefix('admin/orders')->group(function () {
+            Route::patch('{id}/status', [App\Http\Controllers\Api\V1\Admin\PedidoController::class, 'adminUpdateStatus']);
+        });
         Route::controller(OrderStatusController::class)->prefix('orders')->group(function () {
             Route::get('/{id}/status', 'getStatus');           // Obtener estado de pedido
             Route::patch('/{id}/status', 'updateStatus');      // Actualizar estado de pedido
-            Route::post('/{id}/resume', 'resumeOrder');        // Reanudar un pedido abandonado
+            Route::post('/{id}/resume', 'resumeOrder');        // Reanudar un pedido pendiente
         });
     });
 
-    // * RUTA ESPECIAL PARA ABANDONO (Sin autenticación estricta)
-    Route::post('orders/{id}/mark-abandoned', [OrderStatusController::class, 'markAsAbandoned']);
+    // * RUTA ESPECIAL PARA ABANDONO (Ya no se usa - los pedidos permanecen en pendiente)
+    // Route::post('orders/{id}/mark-abandoned', [OrderStatusController::class, 'markAsAbandoned']);
 
     // * RUTAS DE ADMINISTRADOR (JWT + Admin)
 
@@ -231,7 +245,7 @@ Route::prefix('v1')->group(function () {
         Route::controller(PedidoController::class)->prefix('admin/orders')->group(function () {
             Route::get('/', 'getAllOrders');                    // Todos los pedidos con filtros
             Route::get('/statistics', 'getOrderStatistics');    // Estadísticas de pedidos
-            Route::patch('/{id}/status', 'adminUpdateStatus');  // Actualizar estado como admin
+            // ¡NO definir aquí adminUpdateStatus, ya está en el grupo correcto abajo!
         });
     });
 
