@@ -58,5 +58,60 @@ class UserSeeder extends Seeder
                 'updated_at' => now(),
             ]);
         }
+
+        // Crear más usuarios de prueba para diversos casos de pagos y envíos
+        $usuariosPrueba = [
+            [
+                'email' => 'maria.garcia@test.com',
+                'nombre' => 'María',
+                'apellidos' => 'García López',
+                'telefono' => '+51987111222',
+                'estado' => true,
+            ],
+            [
+                'email' => 'juan.perez@test.com',
+                'nombre' => 'Juan',
+                'apellidos' => 'Pérez Silva',
+                'telefono' => '+51987333444',
+                'estado' => true,
+            ],
+            [
+                'email' => 'ana.rodriguez@test.com',
+                'nombre' => 'Ana',
+                'apellidos' => 'Rodríguez Mamani',
+                'telefono' => '+51987555666',
+                'estado' => true,
+            ],
+            [
+                'email' => 'carlos.mendoza@test.com',
+                'nombre' => 'Carlos',
+                'apellidos' => 'Mendoza Quispe',
+                'telefono' => '+51987777888',
+                'estado' => true,
+            ],
+            [
+                'email' => 'sofia.vargas@test.com',
+                'nombre' => 'Sofía',
+                'apellidos' => 'Vargas Huamán',
+                'telefono' => '+51987999000',
+                'estado' => true,
+            ]
+        ];
+
+        foreach ($usuariosPrueba as $usuario) {
+            if (!DB::table('users')->where('email', $usuario['email'])->exists()) {
+                DB::table('users')->insert([
+                    'nombre' => $usuario['nombre'],
+                    'apellidos' => $usuario['apellidos'],
+                    'email' => $usuario['email'],
+                    'telefono' => $usuario['telefono'],
+                    'password' => Hash::make('password123456'),
+                    'roles_id_rol' => 2, // Cliente
+                    'estado' => $usuario['estado'],
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+        }
     }
 }

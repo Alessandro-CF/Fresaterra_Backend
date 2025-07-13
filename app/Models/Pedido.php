@@ -31,6 +31,29 @@ class Pedido extends Model
 	protected $table = 'pedidos';
 	protected $primaryKey = 'id_pedido';
 
+	// Estados disponibles para pedidos
+	const ESTADO_PENDIENTE = 'pendiente';
+	const ESTADO_CONFIRMADO = 'confirmado';
+	const ESTADO_PREPARANDO = 'preparando';
+	const ESTADO_EN_CAMINO = 'en_camino';
+	const ESTADO_ENTREGADO = 'entregado';
+	const ESTADO_CANCELADO = 'cancelado';
+
+	/**
+	 * Obtener todos los estados disponibles
+	 */
+	public static function getEstados()
+	{
+		return [
+			self::ESTADO_PENDIENTE,
+			self::ESTADO_CONFIRMADO,
+			self::ESTADO_PREPARANDO,
+			self::ESTADO_EN_CAMINO,
+			self::ESTADO_ENTREGADO,
+			self::ESTADO_CANCELADO,
+		];
+	}
+
 	protected $casts = [
 		'monto_total' => 'float',
 		'fecha_creacion' => 'datetime',
