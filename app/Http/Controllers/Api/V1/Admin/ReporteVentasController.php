@@ -837,7 +837,7 @@ class ReporteVentasController extends Controller
     {
         $carritosCreados = Carrito::whereBetween('fecha_creacion', [$fechaInicio, $fechaFin])->count();
         $pedidosCompletados = Pedido::whereBetween('fecha_creacion', [$fechaInicio, $fechaFin])
-            ->where('estado', 'completado')
+            ->where('estado', Pedido::ESTADO_ENTREGADO)
             ->count();
 
         return $carritosCreados > 0 ? round(($pedidosCompletados / $carritosCreados) * 100, 2) : 0;

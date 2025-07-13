@@ -144,15 +144,15 @@ class PagosController extends Controller
                 $pago = Pago::create(array_merge([
                     'fecha_pago' => now(),
                     'monto_pago' => $request->monto_pago,
-                    'estado_pago' => $request->get('estado_pago', 'pendiente'),
+                    'estado_pago' => $request->get('estado_pago', Pago::ESTADO_PENDIENTE),
                     'referencia_pago' => $request->referencia_pago,
                     'pedidos_id_pedido' => $request->pedido_id,
                     'metodos_pago_id_metodo_pago' => $request->metodo_pago_id
                 ], $paymentMethodSnapshot));
 
                 // Si el pago es completado, actualizar el estado del pedido
-                if ($request->get('estado_pago') === 'completado') {
-                    $pedido->update(['estado' => 'pagado']);
+                if ($request->get('estado_pago') === Pago::ESTADO_COMPLETADO) {
+                    $pedido->update(['estado' => Pedido::ESTADO_CONFIRMADO]);
                 }
 
                 DB::commit();
@@ -317,10 +317,10 @@ class PagosController extends Controller
                 $pago->update($updateData);
 
                 // Actualizar el estado del pedido según el estado del pago
-                if ($request->estado_pago === 'completado') {
+                if ($request->estado_pago === Pago::ESTADO_COMPLETADO) {
                     $pago->pedido->update(['estado' => 'pagado']);
-                } elseif ($request->estado_pago === 'cancelado') {
-                    $pago->pedido->update(['estado' => 'cancelado']);
+                } elseif ($request->estado_pago === Pago::ESTADO_CANCELADO) {
+                    $pago->pedido->update(['estado' => Pago::ESTADO_CANCELADO]);
                 }
 
                 DB::commit();
@@ -385,7 +385,7 @@ class PagosController extends Controller
 
             // Buscar el pago existente para este pedido
             $pago = Pago::where('pedidos_id_pedido', $orderId)
-                       ->where('estado_pago', 'pendiente')
+                       ->where('estado_pago', Pago::ESTADO_PENDIENTE)
                        ->first();
 
             if (!$pago) {
@@ -399,10 +399,10 @@ class PagosController extends Controller
             try {
                 // Actualizar el estado del pago según la respuesta de Mercado Pago
                 $estadoPago = match($request->status) {
-                    'approved' => 'completado',
-                    'pending' => 'pendiente',
-                    'rejected', 'cancelled' => 'cancelado',
-                    default => 'pendiente'
+                    'approved' => Pago::ESTADO_COMPLETADO,
+                    'pending' => Pago::ESTADO_PENDIENTE,
+                    'rejected', 'cancelled' => Pago::ESTADO_CANCELADO,
+                    default => Pago::ESTADO_PENDIENTE
                 };
 
                 // Generar referencia_pago en el formato correcto
@@ -413,17 +413,17 @@ class PagosController extends Controller
                     'referencia_pago' => $referencePago,
                     'fecha_pago' => now()
                 ]);                // Actualizar el estado del pedido si el pago fue aprobado
-                if ($estadoPago === 'completado') {
+                if ($estadoPago === Pago::ESTADO_COMPLETADO) {
                     $pedido->update([
-                        'estado' => 'confirmado'
+                        'estado' => Pedido::ESTADO_CONFIRMADO
                     ]);
 
                     // Crear registro de envío automáticamente
                     $this->createShippingRecord($pedido);
                     
-                } elseif ($estadoPago === 'cancelado') {
+                } elseif ($estadoPago === Pago::ESTADO_CANCELADO) {
                     $pedido->update([
-                        'estado' => 'cancelado'
+                        'estado' => Pedido::ESTADO_CANCELADO
                     ]);
                 }
 
@@ -544,10 +544,10 @@ class PagosController extends Controller
                 'pagos' => $pagos,
                 'total' => $pagos->count(),
                 'statistics' => [
-                    'total_amount' => $pagos->where('estado_pago', 'completado')->sum('monto_pago'),
-                    'pending_payments' => $pagos->where('estado_pago', 'pendiente')->count(),
-                    'completed_payments' => $pagos->where('estado_pago', 'completado')->count(),
-                    'cancelled_payments' => $pagos->where('estado_pago', 'cancelado')->count()
+                    'total_amount' => $pagos->where('estado_pago', Pago::ESTADO_COMPLETADO)->sum('monto_pago'),
+                    'pending_payments' => $pagos->where('estado_pago', Pago::ESTADO_PENDIENTE)->count(),
+                    'completed_payments' => $pagos->where('estado_pago', Pago::ESTADO_COMPLETADO)->count(),
+                    'cancelled_payments' => $pagos->where('estado_pago', Pago::ESTADO_CANCELADO)->count()
                 ]
             ], 200);
 
@@ -568,9 +568,9 @@ class PagosController extends Controller
             $stats = [
                 'overview' => [
                     'total_payments' => Pago::count(),
-                    'total_amount' => Pago::where('estado_pago', 'completado')->sum('monto_pago'),
-                    'pending_amount' => Pago::where('estado_pago', 'pendiente')->sum('monto_pago'),
-                    'failed_payments' => Pago::where('estado_pago', 'cancelado')->count()
+                    'total_amount' => Pago::where('estado_pago', Pago::ESTADO_COMPLETADO)->sum('monto_pago'),
+                    'pending_amount' => Pago::where('estado_pago', Pago::ESTADO_PENDIENTE)->sum('monto_pago'),
+                    'failed_payments' => Pago::where('estado_pago', Pago::ESTADO_CANCELADO)->count()
                 ],
                 'by_status' => Pago::selectRaw('estado_pago, count(*) as count, sum(monto_pago) as total_amount')
                     ->groupBy('estado_pago')
@@ -613,8 +613,8 @@ class PagosController extends Controller
                     'monto_envio_existente' => $existingShipping->monto_envio
                 ]);
                   // Solo actualizar el estado si es necesario, pero mantener el monto original
-                if ($existingShipping->estado === 'pendiente') {
-                    $existingShipping->update(['estado' => 'confirmado']);
+                if ($existingShipping->estado === Pago::ESTADO_PENDIENTE) {
+                    $existingShipping->update(['estado' => Pedido::ESTADO_CONFIRMADO]);
                     Log::info('Estado de envío actualizado a confirmado', [
                         'envio_id' => $existingShipping->id_envio
                     ]);
@@ -650,7 +650,7 @@ class PagosController extends Controller
             
             $envio = Envio::create(array_merge([
                 'monto_envio' => $costoEnvio,
-                'estado' => 'confirmado', // Estado confirmado ya que el pago fue aprobado
+                'estado' => Pedido::ESTADO_CONFIRMADO, // Estado confirmado ya que el pago fue aprobado
                 'fecha_envio' => now(), // 🔧 Mismo día para fresas frescas (entrega en 1-2 horas)
                 'transportistas_id_transportista' => $transportistaId,
                 'pedidos_id_pedido' => $pedido->id_pedido,
@@ -663,7 +663,7 @@ class PagosController extends Controller
                 'transportista_id' => $transportistaId,
                 'transportista_nombre' => $transportistSnapshot['transportista_nombre_snapshot'],
                 'monto_envio' => $costoEnvio,
-                'estado' => 'confirmado',
+                'estado' => Pedido::ESTADO_CONFIRMADO,
                 'direccion_id' => $defaultAddress ? $defaultAddress->id_direccion : null,
                 'direccion_snapshot' => $addressSnapshot['direccion_linea1_snapshot'],
                 'direccion_asignada' => $defaultAddress ? 'si' : 'no'
@@ -841,7 +841,7 @@ class PagosController extends Controller
 
             // Buscar el pago pendiente para este pedido
             $pago = Pago::where('pedidos_id_pedido', $orderId)
-                       ->where('estado_pago', 'pendiente')
+                       ->where('estado_pago', Pago::ESTADO_PENDIENTE)
                        ->first();
 
             if (!$pago) {
@@ -858,10 +858,10 @@ class PagosController extends Controller
             try {
                 // Actualizar el estado del pago según la respuesta de Mercado Pago
                 $estadoPago = match($paymentStatus) {
-                    'approved' => 'completado',
-                    'pending' => 'pendiente',
-                    'rejected', 'cancelled' => 'cancelado',
-                    default => 'pendiente'
+                    'approved' => Pago::ESTADO_COMPLETADO,
+                    'pending' => Pago::ESTADO_PENDIENTE,
+                    'rejected', 'cancelled' => Pago::ESTADO_CANCELADO,
+                    default => Pago::ESTADO_PENDIENTE
                 };
 
                 // Generar referencia_pago en el formato correcto
@@ -874,20 +874,20 @@ class PagosController extends Controller
                 ]);
 
                 // Actualizar el estado del pedido y envío
-                if ($estadoPago === 'completado') {
-                    $pedido->update(['estado' => 'confirmado']);
+                if ($estadoPago === Pago::ESTADO_COMPLETADO) {
+                    $pedido->update(['estado' => Pedido::ESTADO_CONFIRMADO]);
                     
                     // Actualizar estado del envío si existe
                     if ($envio) {
-                        $envio->update(['estado' => 'confirmado']);
+                        $envio->update(['estado' => Pedido::ESTADO_CONFIRMADO]);
                     }
                     
-                } elseif ($estadoPago === 'cancelado') {
-                    $pedido->update(['estado' => 'cancelado']);
+                } elseif ($estadoPago === Pago::ESTADO_CANCELADO) {
+                    $pedido->update(['estado' => Pago::ESTADO_CANCELADO]);
                     
                     // Cancelar envío si existe
                     if ($envio) {
-                        $envio->update(['estado' => 'cancelado']);
+                        $envio->update(['estado' => Pago::ESTADO_CANCELADO]);
                     }
                 }
 
@@ -988,7 +988,7 @@ class PagosController extends Controller
                 ]);
 
                 // Actualizar si el pago está pendiente
-                if ($pago->estado_pago === 'pendiente') {
+                if ($pago->estado_pago === Pago::ESTADO_PENDIENTE) {
                     $estadoPagoAnterior = $pago->estado_pago;
                     
                     // Generar referencia_pago en el formato correcto
@@ -998,19 +998,19 @@ class PagosController extends Controller
 
                     // Actualizar el estado del pago a completado
                     $pagoUpdated = $pago->update([
-                        'estado_pago' => 'completado',
+                        'estado_pago' => Pago::ESTADO_COMPLETADO,
                         'referencia_pago' => $referencePago,
                         'fecha_pago' => now()
                     ]);
 
                     // Actualizar el estado del pedido a confirmado (tanto para pedidos normales como reanudados)
-                    $pedidoUpdated = $pedido->update(['estado' => 'confirmado']);
+                    $pedidoUpdated = $pedido->update(['estado' => Pedido::ESTADO_CONFIRMADO]);
 
                     // 🔧 CORREGIR: Actualizar estado del envío a confirmado
                     $envio = Envio::where('pedidos_id_pedido', $orderId)->first();
                     $envioUpdated = false;
                     if ($envio) {
-                        $envioUpdated = $envio->update(['estado' => 'confirmado']);
+                        $envioUpdated = $envio->update(['estado' => Pedido::ESTADO_CONFIRMADO]);
                     }
 
                     // Verificar que las actualizaciones se aplicaron
@@ -1025,9 +1025,9 @@ class PagosController extends Controller
                         'referencia_pago' => $referencePago,
                         'was_resumed' => false,
                         'estado_pago_anterior' => $estadoPagoAnterior,
-                        'pedido_estado_nuevo' => 'confirmado',
-                        'pago_estado_nuevo' => 'completado',
-                        'envio_estado_nuevo' => 'confirmado',
+                        'pedido_estado_nuevo' => Pedido::ESTADO_CONFIRMADO,
+                        'pago_estado_nuevo' => Pago::ESTADO_COMPLETADO,
+                        'envio_estado_nuevo' => Pedido::ESTADO_CONFIRMADO,
                         'pago_update_result' => $pagoUpdated,
                         'pedido_update_result' => $pedidoUpdated,
                         'envio_update_result' => $envioUpdated,

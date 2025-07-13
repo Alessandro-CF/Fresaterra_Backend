@@ -273,7 +273,7 @@ class PedidoController extends Controller
                 // Crear el pedido
                 $pedido = Pedido::create([
                     'monto_total' => $request->monto_total,
-                    'estado' => 'pendiente',
+                    'estado' => Pedido::ESTADO_PENDIENTE,
                     'fecha_creacion' => now(),
                     'usuarios_id_usuario' => $user->id_usuario
                 ]);                // Crear los items del pedido con snapshots
@@ -311,7 +311,7 @@ class PedidoController extends Controller
                     $pago = Pago::create(array_merge([
                         'fecha_pago' => now(),
                         'monto_pago' => $request->monto_total,
-                        'estado_pago' => 'pendiente',
+                        'estado_pago' => Pago::ESTADO_PENDIENTE,
                         'referencia_pago' => 'ORDER_' . $pedido->id_pedido . '_' . time(),
                         'pedidos_id_pedido' => $pedido->id_pedido,
                         'metodos_pago_id_metodo_pago' => $metodoPago->id_metodo_pago
@@ -462,7 +462,7 @@ class PedidoController extends Controller
             }
 
             // Solo se pueden cancelar pedidos pendientes o confirmados
-            if (!in_array($pedido->estado, ['pendiente', 'confirmado'])) {
+            if (!in_array($pedido->estado, [Pedido::ESTADO_PENDIENTE, Pedido::ESTADO_CONFIRMADO])) {
                 return response()->json([
                     'error' => 'No se puede cancelar un pedido en estado: ' . $pedido->estado
                 ], 400);
@@ -472,17 +472,17 @@ class PedidoController extends Controller
             
             try {
                 // Actualizar el estado del pedido a cancelado
-                $pedido->update(['estado' => 'cancelado']);
+                $pedido->update(['estado' => Pedido::ESTADO_CANCELADO]);
 
                 // Cancelar pagos asociados que estén pendientes
                 Pago::where('pedidos_id_pedido', $pedidoId)
-                    ->whereIn('estado_pago', ['pendiente'])
-                    ->update(['estado_pago' => 'cancelado']);
+                    ->whereIn('estado_pago', [Pago::ESTADO_PENDIENTE])
+                    ->update(['estado_pago' => Pago::ESTADO_CANCELADO]);
 
                 // Cancelar envíos asociados que estén pendientes o confirmados
                 Envio::where('pedidos_id_pedido', $pedidoId)
-                    ->whereIn('estado', ['pendiente', 'confirmado'])
-                    ->update(['estado' => 'cancelado']);
+                    ->whereIn('estado', [Envio::ESTADO_PENDIENTE, Envio::ESTADO_CONFIRMADO])
+                    ->update(['estado' => Envio::ESTADO_CANCELADO]);
 
                 DB::commit();
 
@@ -544,9 +544,9 @@ class PedidoController extends Controller
                 'total' => $pedidos->count(),
                 'statistics' => [
                     'total_amount' => $pedidos->sum('monto_total'),
-                    'pending_orders' => $pedidos->where('estado', 'pendiente')->count(),
-                    'completed_orders' => $pedidos->where('estado', 'entregado')->count(),
-                    'cancelled_orders' => $pedidos->where('estado', 'cancelado')->count()
+                    'pending_orders' => $pedidos->where('estado', Pedido::ESTADO_PENDIENTE)->count(),
+                    'completed_orders' => $pedidos->where('estado', Pedido::ESTADO_ENTREGADO)->count(),
+                    'cancelled_orders' => $pedidos->where('estado', Pedido::ESTADO_CANCELADO)->count()
                 ]
             ], 200);
 
@@ -567,15 +567,15 @@ class PedidoController extends Controller
             $stats = [
                 'overview' => [
                     'total_orders' => Pedido::count(),
-                    'total_revenue' => Pedido::whereIn('estado', ['entregado', 'pagado'])->sum('monto_total'),
-                    'pending_orders' => Pedido::where('estado', 'pendiente')->count(),
+                    'total_revenue' => Pedido::whereIn('estado', [Pedido::ESTADO_ENTREGADO])->sum('monto_total'),
+                    'pending_orders' => Pedido::where('estado', Pedido::ESTADO_PENDIENTE)->count(),
                     'average_order_value' => round(Pedido::avg('monto_total'), 2)
                 ],
                 'by_status' => Pedido::selectRaw('estado, count(*) as count, sum(monto_total) as total_amount')
                     ->groupBy('estado')
                     ->get(),
                 'monthly_sales' => Pedido::selectRaw('YEAR(fecha_creacion) as year, MONTH(fecha_creacion) as month, count(*) as orders_count, sum(monto_total) as total_sales')
-                    ->whereIn('estado', ['entregado', 'pagado'])
+                    ->whereIn('estado', [Pedido::ESTADO_ENTREGADO])
                     ->groupByRaw('YEAR(fecha_creacion), MONTH(fecha_creacion)')
                     ->orderByRaw('YEAR(fecha_creacion) DESC, MONTH(fecha_creacion) DESC')
                     ->limit(12)
@@ -623,7 +623,7 @@ class PedidoController extends Controller
             // Crear el registro de envío con estado "pendiente" y snapshots
             $envio = Envio::create(array_merge([
                 'monto_envio' => $costoEnvio,
-                'estado' => 'pendiente', // Estado pendiente hasta que se confirme el pago
+                'estado' => Envio::ESTADO_PENDIENTE, // Estado pendiente hasta que se confirme el pago
                 'fecha_envio' => now(), // 🔧 Mismo día para fresas frescas (entrega en 1-2 horas)
                 'transportistas_id_transportista' => $transportistaId,
                 'pedidos_id_pedido' => $pedido->id_pedido,
@@ -636,7 +636,7 @@ class PedidoController extends Controller
                 'transportista_id' => $transportistaId,
                 'transportista_nombre' => $transportistSnapshot['transportista_nombre_snapshot'],
                 'monto_envio' => $costoEnvio,
-                'estado' => 'pendiente',
+                'estado' => Envio::ESTADO_PENDIENTE,
                 'direccion_id' => $addressId,
                 'direccion_snapshot' => $addressSnapshot['direccion_linea1_snapshot'],
                 'shipping_from_frontend' => $shippingCostFromFrontend !== null

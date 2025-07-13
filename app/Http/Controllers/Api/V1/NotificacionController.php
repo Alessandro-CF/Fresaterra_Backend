@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Models\User;
 use App\Models\Notificacion;
 use App\Models\Mensaje;
+use App\Models\Pedido;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
@@ -1039,7 +1040,7 @@ class NotificacionController extends Controller
                 'data' => [
                     'mensaje' => 'Tu pedido #' . ($eventData['pedido_id'] ?? '') . ' ha sido confirmado y está siendo procesado.',
                     'pedido_id' => $eventData['pedido_id'] ?? null,
-                    'estado' => 'confirmado',
+                    'estado' => Pedido::ESTADO_CONFIRMADO,
                     'monto' => $eventData['monto'] ?? null
                 ]
             ],
