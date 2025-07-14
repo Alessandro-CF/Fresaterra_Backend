@@ -30,6 +30,25 @@ class Reporte extends Model
 	protected $table = 'reportes';
 	protected $primaryKey = 'id_reporte';
 
+	// Estados disponibles para reportes
+	const ESTADO_EN_PROCESO = 'en_proceso';
+	const ESTADO_GENERADO = 'generado';
+	const ESTADO_ERROR = 'error';
+	const ESTADO_CANCELADO = 'cancelado';
+
+	/**
+	 * Obtener todos los estados disponibles
+	 */
+	public static function getEstados()
+	{
+		return [
+			self::ESTADO_EN_PROCESO,
+			self::ESTADO_GENERADO,
+			self::ESTADO_ERROR,
+			self::ESTADO_CANCELADO,
+		];
+	}
+
 	protected $casts = [
 		'fecha_creacion' => 'datetime',
 		'fecha_inicio' => 'date',

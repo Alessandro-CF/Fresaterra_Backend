@@ -42,8 +42,8 @@ class ReporteVentasController extends Controller
             // Total de pedidos en el periodo
             $totalPedidos = Pedido::whereBetween('fecha_creacion', [$fechaInicio, $fechaFin])->count();
 
-            // Total de ventas (sumatoria de pagos aprobados en el periodo)
-            $totalVentas = Pago::where('estado_pago', 'aprobado')
+            // Total de ventas (sumatoria de pagos completados en el periodo)
+            $totalVentas = Pago::where('estado_pago', Pago::ESTADO_COMPLETADO)
                 ->whereBetween('fecha_pago', [$fechaInicio, $fechaFin])
                 ->sum('monto_pago');
 
@@ -67,7 +67,7 @@ class ReporteVentasController extends Controller
                 ->get();
 
             // Total de carritos abandonados en el periodo
-            $carritosAbandonados = Carrito::where('estado', 'abandonado')
+            $carritosAbandonados = Carrito::where('estado', Carrito::ESTADO_ABANDONADO)
                 ->whereBetween('fecha_creacion', [$fechaInicio, $fechaFin])
                 ->count();
 
@@ -118,7 +118,7 @@ class ReporteVentasController extends Controller
                 'tipo' => $request->tipo,
                 'fecha_inicio' => $request->fecha_inicio,
                 'fecha_fin' => $request->fecha_fin,
-                'estado' => 'en_proceso',
+                'estado' => Reporte::ESTADO_EN_PROCESO,
                 'usuarios_id_usuario' => $user->id_usuario ?? $user->id ?? null,
             ]);
 
@@ -175,7 +175,7 @@ class ReporteVentasController extends Controller
 
             // Actualizar el reporte en la base de datos
             $reporte->update([
-                'estado' => 'generado',
+                'estado' => Reporte::ESTADO_GENERADO,
                 'archivo_url' => $archivoUrl
             ]);
 
@@ -194,7 +194,7 @@ class ReporteVentasController extends Controller
         } catch (\Exception $e) {
             // En caso de error, marcar el reporte como error
             if ($reporte) {
-                $reporte->update(['estado' => 'error']);
+                $reporte->update(['estado' => Reporte::ESTADO_ERROR]);
             }
             
             Log::error('Error al generar reporte: ' . $e->getMessage());
@@ -213,8 +213,8 @@ class ReporteVentasController extends Controller
         // Total de pedidos en el periodo
         $totalPedidos = Pedido::whereBetween('fecha_creacion', [$fechaInicio, $fechaFin])->count();
 
-        // Total de ventas (sumatoria de pagos aprobados en el periodo)
-        $totalVentas = Pago::where('estado_pago', 'aprobado')
+        // Total de ventas (sumatoria de pagos completados en el periodo)
+        $totalVentas = Pago::where('estado_pago', Pago::ESTADO_COMPLETADO)
             ->whereBetween('fecha_pago', [$fechaInicio, $fechaFin])
             ->sum('monto_pago');
 
@@ -238,7 +238,7 @@ class ReporteVentasController extends Controller
             ->get();
 
         // Ventas por día
-        $ventasPorDia = Pago::where('estado_pago', 'aprobado')
+        $ventasPorDia = Pago::where('estado_pago', Pago::ESTADO_COMPLETADO)
             ->whereBetween('fecha_pago', [$fechaInicio, $fechaFin])
             ->selectRaw('DATE(fecha_pago) as fecha, SUM(monto_pago) as total_ventas, COUNT(*) as cantidad_transacciones')
             ->groupBy('fecha')
@@ -305,7 +305,7 @@ class ReporteVentasController extends Controller
                 ], 404);
             }
 
-            if ($reporte->estado !== 'generado' || !$reporte->archivo_url) {
+            if ($reporte->estado !== Reporte::ESTADO_GENERADO || !$reporte->archivo_url) {
                 return response()->json([
                     'mensaje' => 'El reporte no está disponible para descarga'
                 ], 409);
@@ -384,7 +384,7 @@ class ReporteVentasController extends Controller
                 ], 404);
             }
 
-            if ($reporte->estado === 'en_proceso') {
+            if ($reporte->estado === Reporte::ESTADO_EN_PROCESO) {
                 return response()->json([
                     'mensaje' => 'El reporte aún está en proceso'
                 ], 409);
@@ -464,7 +464,7 @@ class ReporteVentasController extends Controller
     public function updateStatus(Request $request, $id_reporte)
     {
         $validator = Validator::make($request->all(), [
-            'estado' => 'required|in:en_proceso,generado,error,cancelado'
+            'estado' => 'required|in:' . implode(',', Reporte::getEstados())
         ]);
 
         if ($validator->fails()) {
@@ -528,7 +528,7 @@ class ReporteVentasController extends Controller
                 ], 404);
             }
 
-            $reporte->estado = 'generado';
+            $reporte->estado = Reporte::ESTADO_GENERADO;
             $reporte->archivo_url = $request->archivo_url;
             $reporte->save();
 
@@ -616,7 +616,7 @@ class ReporteVentasController extends Controller
      */
     private function getVentasDiariasChart($fechaInicio, $fechaFin)
     {
-        $ventas = Pago::where('estado_pago', 'aprobado')
+        $ventas = Pago::where('estado_pago', Pago::ESTADO_COMPLETADO)
             ->whereBetween('fecha_pago', [$fechaInicio, $fechaFin])
             ->selectRaw('DATE(fecha_pago) as fecha, SUM(monto_pago) as total, COUNT(*) as transacciones')
             ->groupBy('fecha')
@@ -706,7 +706,7 @@ class ReporteVentasController extends Controller
      */
     private function getVentasMensualesChart($fechaInicio, $fechaFin)
     {
-        $ventas = Pago::where('estado_pago', 'aprobado')
+        $ventas = Pago::where('estado_pago', Pago::ESTADO_COMPLETADO)
             ->whereBetween('fecha_pago', [$fechaInicio, $fechaFin])
             ->selectRaw('YEAR(fecha_pago) as año, MONTH(fecha_pago) as mes, SUM(monto_pago) as total')
             ->groupBy('año', 'mes')
@@ -756,7 +756,7 @@ class ReporteVentasController extends Controller
             $fechaFin = $request->fecha_fin;
 
             // KPIs principales
-            $totalVentas = Pago::where('estado_pago', 'aprobado')
+            $totalVentas = Pago::where('estado_pago', Pago::ESTADO_COMPLETADO)
                 ->whereBetween('fecha_pago', [$fechaInicio, $fechaFin])
                 ->sum('monto_pago');
 
@@ -765,27 +765,66 @@ class ReporteVentasController extends Controller
             $ticketPromedio = $totalPedidos > 0 ? round($totalVentas / $totalPedidos, 2) : 0;
 
             $crecimientoVentas = $this->calcularCrecimientoVentas($fechaInicio, $fechaFin);
+            $tasaConversion = $this->calcularTasaConversion($fechaInicio, $fechaFin);
+
+            // Información del período para contexto
+            $diasPeriodo = \Carbon\Carbon::parse($fechaInicio)->diffInDays(\Carbon\Carbon::parse($fechaFin)) + 1;
+            $fechaInicioAnterior = \Carbon\Carbon::parse($fechaInicio)->subDays($diasPeriodo)->format('Y-m-d');
+            $fechaFinAnterior = \Carbon\Carbon::parse($fechaInicio)->subDay()->format('Y-m-d');
 
             return response()->json([
                 'mensaje' => 'KPIs obtenidos exitosamente',
+                'periodo' => [
+                    'actual' => [
+                        'fecha_inicio' => $fechaInicio,
+                        'fecha_fin' => $fechaFin,
+                        'dias' => $diasPeriodo
+                    ],
+                    'anterior' => [
+                        'fecha_inicio' => $fechaInicioAnterior,
+                        'fecha_fin' => $fechaFinAnterior,
+                        'dias' => $diasPeriodo
+                    ]
+                ],
                 'data' => [
                     'total_ventas' => [
                         'valor' => $totalVentas,
                         'formato' => 'currency',
-                        'crecimiento' => $crecimientoVentas['ventas']
+                        'crecimiento' => [
+                            'porcentaje' => $crecimientoVentas['ventas'],
+                            'tendencia' => $crecimientoVentas['ventas'] > 0 ? 'positiva' : ($crecimientoVentas['ventas'] < 0 ? 'negativa' : 'estable'),
+                            'valor_anterior' => $crecimientoVentas['ventas_anterior'],
+                            'diferencia_absoluta' => $totalVentas - $crecimientoVentas['ventas_anterior']
+                        ]
                     ],
                     'total_pedidos' => [
                         'valor' => $totalPedidos,
                         'formato' => 'number',
-                        'crecimiento' => $crecimientoVentas['pedidos']
+                        'crecimiento' => [
+                            'porcentaje' => $crecimientoVentas['pedidos'],
+                            'tendencia' => $crecimientoVentas['pedidos'] > 0 ? 'positiva' : ($crecimientoVentas['pedidos'] < 0 ? 'negativa' : 'estable'),
+                            'valor_anterior' => $crecimientoVentas['pedidos_anterior'],
+                            'diferencia_absoluta' => $totalPedidos - $crecimientoVentas['pedidos_anterior']
+                        ]
                     ],
                     'ticket_promedio' => [
                         'valor' => $ticketPromedio,
-                        'formato' => 'currency'
+                        'formato' => 'currency',
+                        'crecimiento' => [
+                            'porcentaje' => $crecimientoVentas['ticket_promedio'],
+                            'tendencia' => $crecimientoVentas['ticket_promedio'] > 0 ? 'positiva' : ($crecimientoVentas['ticket_promedio'] < 0 ? 'negativa' : 'estable'),
+                            'valor_anterior' => $crecimientoVentas['ticket_promedio_anterior'],
+                            'diferencia_absoluta' => $ticketPromedio - $crecimientoVentas['ticket_promedio_anterior']
+                        ]
                     ],
                     'conversion_rate' => [
-                        'valor' => $this->calcularTasaConversion($fechaInicio, $fechaFin),
-                        'formato' => 'percentage'
+                        'valor' => $tasaConversion['tasa'],
+                        'formato' => 'percentage',
+                        'contexto' => [
+                            'carritos_creados' => $tasaConversion['carritos_creados'],
+                            'pedidos_completados' => $tasaConversion['pedidos_completados'],
+                            'descripcion' => "De {$tasaConversion['carritos_creados']} carritos, {$tasaConversion['pedidos_completados']} se convirtieron en pedidos"
+                        ]
                     ]
                 ]
             ], 200);
@@ -811,12 +850,12 @@ class ReporteVentasController extends Controller
         $fechaFinAnterior = \Carbon\Carbon::parse($fechaInicio)->subDay()->format('Y-m-d');
 
         // Ventas periodo actual
-        $ventasActuales = Pago::where('estado_pago', 'aprobado')
+        $ventasActuales = Pago::where('estado_pago', Pago::ESTADO_COMPLETADO)
             ->whereBetween('fecha_pago', [$fechaInicio, $fechaFin])
             ->sum('monto_pago');
 
         // Ventas periodo anterior
-        $ventasAnteriores = Pago::where('estado_pago', 'aprobado')
+        $ventasAnteriores = Pago::where('estado_pago', Pago::ESTADO_COMPLETADO)
             ->whereBetween('fecha_pago', [$fechaInicioAnterior, $fechaFinAnterior])
             ->sum('monto_pago');
 
@@ -824,14 +863,35 @@ class ReporteVentasController extends Controller
         $pedidosActuales = Pedido::whereBetween('fecha_creacion', [$fechaInicio, $fechaFin])->count();
         $pedidosAnteriores = Pedido::whereBetween('fecha_creacion', [$fechaInicioAnterior, $fechaFinAnterior])->count();
 
+        // Calcular ticket promedio
+        $ticketPromedioActual = $pedidosActuales > 0 ? round($ventasActuales / $pedidosActuales, 2) : 0;
+        $ticketPromedioAnterior = $pedidosAnteriores > 0 ? round($ventasAnteriores / $pedidosAnteriores, 2) : 0;
+
+        // Calcular porcentajes de crecimiento con límites razonables
+        $crecimientoVentas = $ventasAnteriores > 0 ? 
+            round((($ventasActuales - $ventasAnteriores) / $ventasAnteriores) * 100, 2) : 
+            ($ventasActuales > 0 ? 100 : 0);
+
+        $crecimientoPedidos = $pedidosAnteriores > 0 ? 
+            round((($pedidosActuales - $pedidosAnteriores) / $pedidosAnteriores) * 100, 2) : 
+            ($pedidosActuales > 0 ? 100 : 0);
+
+        $crecimientoTicketPromedio = $ticketPromedioAnterior > 0 ? 
+            round((($ticketPromedioActual - $ticketPromedioAnterior) / $ticketPromedioAnterior) * 100, 2) : 
+            ($ticketPromedioActual > 0 ? 100 : 0);
+
         return [
-            'ventas' => $ventasAnteriores > 0 ? round((($ventasActuales - $ventasAnteriores) / $ventasAnteriores) * 100, 2) : 0,
-            'pedidos' => $pedidosAnteriores > 0 ? round((($pedidosActuales - $pedidosAnteriores) / $pedidosAnteriores) * 100, 2) : 0
+            'ventas' => min(max($crecimientoVentas, -100), 1000), // Limitar entre -100% y 1000%
+            'ventas_anterior' => $ventasAnteriores,
+            'pedidos' => min(max($crecimientoPedidos, -100), 1000), // Limitar entre -100% y 1000%
+            'pedidos_anterior' => $pedidosAnteriores,
+            'ticket_promedio' => min(max($crecimientoTicketPromedio, -100), 1000), // Limitar entre -100% y 1000%
+            'ticket_promedio_anterior' => $ticketPromedioAnterior
         ];
     }
 
     /**
-     * Calcular tasa de conversión
+     * Calcular tasa de conversión con contexto adicional
      */
     private function calcularTasaConversion($fechaInicio, $fechaFin)
     {
@@ -840,6 +900,12 @@ class ReporteVentasController extends Controller
             ->where('estado', Pedido::ESTADO_ENTREGADO)
             ->count();
 
-        return $carritosCreados > 0 ? round(($pedidosCompletados / $carritosCreados) * 100, 2) : 0;
+        $tasa = $carritosCreados > 0 ? round(($pedidosCompletados / $carritosCreados) * 100, 2) : 0;
+
+        return [
+            'tasa' => $tasa,
+            'carritos_creados' => $carritosCreados,
+            'pedidos_completados' => $pedidosCompletados
+        ];
     }
 }

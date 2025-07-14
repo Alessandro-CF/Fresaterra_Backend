@@ -47,6 +47,23 @@ class Carrito extends Model
 
     protected $with = ['items'];
 
+	// Estados disponibles para carritos
+	const ESTADO_ACTIVO = 'activo';
+	const ESTADO_ABANDONADO = 'abandonado';
+	const ESTADO_CONVERTIDO = 'convertido';
+
+	/**
+	 * Obtener todos los estados disponibles
+	 */
+	public static function getEstados()
+	{
+		return [
+			self::ESTADO_ACTIVO,
+			self::ESTADO_ABANDONADO,
+			self::ESTADO_CONVERTIDO,
+		];
+	}
+
 	public function usuario(): BelongsTo
 	{
 		return $this->belongsTo(User::class, 'usuarios_id_usuario', 'id_usuario');
