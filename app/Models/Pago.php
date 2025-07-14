@@ -30,6 +30,23 @@ class Pago extends Model
 	protected $table = 'pagos';
 	protected $primaryKey = 'id_pago';
 
+	// Estados disponibles para pagos
+	const ESTADO_PENDIENTE = 'pendiente';
+	const ESTADO_COMPLETADO = 'completado';
+	const ESTADO_CANCELADO = 'cancelado';
+
+	/**
+	 * Obtener todos los estados disponibles
+	 */
+	public static function getEstados()
+	{
+		return [
+			self::ESTADO_PENDIENTE,
+			self::ESTADO_COMPLETADO,
+			self::ESTADO_CANCELADO,
+		];
+	}
+
 	protected $casts = [
 		'fecha_pago' => 'datetime',
 		'monto_pago' => 'float',

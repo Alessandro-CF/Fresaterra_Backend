@@ -300,7 +300,7 @@ class InventarioController extends Controller
     }
 
     /**
-     * Cambiar el estado (activo/inactivo) del inventario de un producto
+     * Cambiar el estado (disponible/agotado) del inventario de un producto
      * PATCH /api/v1/admin/inventory/products/{id}/status
      */
     public function updateStatus(Request $request, $productId)

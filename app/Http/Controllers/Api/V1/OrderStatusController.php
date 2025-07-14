@@ -55,10 +55,10 @@ class OrderStatusController extends Controller
             $pedido->update(['estado' => $request->estado]);
 
             // Si se marca como cancelado, actualizamos también el pago
-            if ($request->estado === 'cancelado') {
+            if ($request->estado === Pedido::ESTADO_CANCELADO) {
                 Pago::where('pedidos_id_pedido', $pedidoId)
-                    ->where('estado_pago', 'pendiente')
-                    ->update(['estado_pago' => 'cancelado']);
+                    ->where('estado_pago', Pago::ESTADO_PENDIENTE)
+                    ->update(['estado_pago' => Pago::ESTADO_CANCELADO]);
             }
 
             return response()->json([

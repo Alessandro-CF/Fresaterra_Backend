@@ -10,11 +10,11 @@ use Illuminate\Support\Facades\Log;
 
 class PedidoController extends Controller
 {
-    // Actualizar estado SOLO a 'completado' para admin
+    // Actualizar estado para admin usando constantes de enum
     public function adminUpdateStatus(Request $request, $id)
     {
         $validator = Validator::make($request->all(), [
-            'estado' => 'required|string|in:completado,cancelado,pendiente'
+            'estado' => 'required|string|in:' . implode(',', Pedido::getEstados())
         ]);
         if ($validator->fails()) {
             return response()->json([
