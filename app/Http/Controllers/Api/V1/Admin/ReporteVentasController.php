@@ -59,9 +59,8 @@ class ReporteVentasController extends Controller
             // Top 5 productos más vendidos en el periodo
             $topProductos = Pedido::whereBetween('pedidos.fecha_creacion', [$fechaInicio, $fechaFin])
                 ->join('pedido_items', 'pedidos.id_pedido', '=', 'pedido_items.pedidos_id_pedido')
-                ->join('productos', 'pedido_items.productos_id_producto', '=', 'productos.id_producto')
-                ->selectRaw('productos.id_producto, productos.nombre, SUM(pedido_items.cantidad) as total_vendidos')
-                ->groupBy('productos.id_producto', 'productos.nombre')
+                ->selectRaw('pedido_items.producto_nombre_snapshot as nombre, SUM(pedido_items.cantidad) as total_vendidos')
+                ->groupBy('pedido_items.producto_nombre_snapshot')
                 ->orderByDesc('total_vendidos')
                 ->limit(5)
                 ->get();
@@ -230,9 +229,8 @@ class ReporteVentasController extends Controller
         // Top productos más vendidos
         $topProductos = Pedido::whereBetween('pedidos.fecha_creacion', [$fechaInicio, $fechaFin])
             ->join('pedido_items', 'pedidos.id_pedido', '=', 'pedido_items.pedidos_id_pedido')
-            ->join('productos', 'pedido_items.productos_id_producto', '=', 'productos.id_producto')
-            ->selectRaw('productos.id_producto, productos.nombre, SUM(pedido_items.cantidad) as total_vendidos, SUM(pedido_items.cantidad * productos.precio) as ingresos_generados')
-            ->groupBy('productos.id_producto', 'productos.nombre')
+            ->selectRaw('pedido_items.producto_nombre_snapshot as nombre, SUM(pedido_items.cantidad) as total_vendidos, SUM(pedido_items.subtotal) as ingresos_generados')
+            ->groupBy('pedido_items.producto_nombre_snapshot')
             ->orderByDesc('total_vendidos')
             ->limit(10)
             ->get();
@@ -687,15 +685,14 @@ class ReporteVentasController extends Controller
     {
         $productos = Pedido::whereBetween('pedidos.fecha_creacion', [$fechaInicio, $fechaFin])
             ->join('pedido_items', 'pedidos.id_pedido', '=', 'pedido_items.pedidos_id_pedido')
-            ->join('productos', 'pedido_items.productos_id_producto', '=', 'productos.id_producto')
             ->selectRaw('
-                productos.nombre as producto_nombre, 
+                pedido_items.producto_nombre_snapshot as producto_nombre, 
                 SUM(pedido_items.cantidad) as unidades_vendidas, 
-                SUM(pedido_items.cantidad * productos.precio) as ingresos_generados,
+                SUM(pedido_items.subtotal) as ingresos_generados,
                 COUNT(DISTINCT pedidos.id_pedido) as pedidos_incluidos,
                 ROUND(AVG(pedido_items.cantidad), 1) as cantidad_promedio_por_pedido
             ')
-            ->groupBy('productos.id_producto', 'productos.nombre')
+            ->groupBy('pedido_items.producto_nombre_snapshot')
             ->orderByDesc('ingresos_generados')
             ->limit(10)
             ->get();
@@ -745,16 +742,22 @@ class ReporteVentasController extends Controller
      */
     private function getEstadosPedidosChart($fechaInicio, $fechaFin)
     {
+        // Primero obtenemos el total de pedidos en el período
+        $totalPedidos = Pedido::whereBetween('fecha_creacion', [$fechaInicio, $fechaFin])->count();
+        
+        // Luego obtenemos los estados con sus cantidades
         $estados = Pedido::whereBetween('fecha_creacion', [$fechaInicio, $fechaFin])
-            ->selectRaw('
-                estado as estado_pedido, 
-                COUNT(*) as cantidad_pedidos,
-                ROUND((COUNT(*) * 100.0 / (SELECT COUNT(*) FROM pedidos WHERE fecha_creacion BETWEEN ? AND ?)), 1) as porcentaje_del_total
-            ')
-            ->setBindings([$fechaInicio, $fechaFin, $fechaInicio, $fechaFin])
+            ->selectRaw('estado as estado_pedido, COUNT(*) as cantidad_pedidos')
             ->groupBy('estado')
             ->orderByDesc('cantidad_pedidos')
             ->get();
+
+        // Calculamos los porcentajes manualmente
+        $estados = $estados->map(function($estado) use ($totalPedidos) {
+            $estado->porcentaje_del_total = $totalPedidos > 0 ? 
+                round(($estado->cantidad_pedidos / $totalPedidos) * 100, 1) : 0;
+            return $estado;
+        });
 
         // Mapeo de estados a etiquetas más descriptivas
         $estadosDescriptivos = [
