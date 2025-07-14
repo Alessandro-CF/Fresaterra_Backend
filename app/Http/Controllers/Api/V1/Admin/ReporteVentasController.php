@@ -600,7 +600,12 @@ class ReporteVentasController extends Controller
                     'fecha_inicio' => $fechaInicio,
                     'fecha_fin' => $fechaFin
                 ],
-                'data' => $data
+                'chart_data' => $data,
+                'metadata' => [
+                    'generado_en' => now()->toISOString(),
+                    'tipo_grafico_recomendado' => $data['chart_type'] ?? 'line',
+                    'total_registros' => count($data['labels'] ?? [])
+                ]
             ], 200);
 
         } catch (\Exception $e) {
@@ -613,33 +618,61 @@ class ReporteVentasController extends Controller
 
     /**
      * Datos optimizados para gráfico de ventas diarias
+     * Tipo de gráfico recomendado: Gráfico de líneas con doble eje Y (Line Chart - Dual Axis)
+     * Propósito: Mostrar evolución temporal de ingresos y volumen de transacciones
      */
     private function getVentasDiariasChart($fechaInicio, $fechaFin)
     {
         $ventas = Pago::where('estado_pago', Pago::ESTADO_COMPLETADO)
             ->whereBetween('fecha_pago', [$fechaInicio, $fechaFin])
-            ->selectRaw('DATE(fecha_pago) as fecha, SUM(monto_pago) as total, COUNT(*) as transacciones')
+            ->selectRaw('DATE(fecha_pago) as fecha, SUM(monto_pago) as ingresos_diarios, COUNT(*) as num_transacciones, AVG(monto_pago) as ticket_promedio_dia')
             ->groupBy('fecha')
             ->orderBy('fecha')
             ->get();
 
         return [
+            'chart_type' => 'line_dual_axis',
+            'title' => 'Evolución de Ventas Diarias',
+            'description' => 'Análisis de ingresos y volumen de transacciones por día',
             'labels' => $ventas->pluck('fecha')->toArray(),
             'datasets' => [
                 [
-                    'label' => 'Ventas Diarias',
-                    'data' => $ventas->pluck('total')->toArray(),
-                    'backgroundColor' => 'rgba(54, 162, 235, 0.2)',
-                    'borderColor' => 'rgba(54, 162, 235, 1)',
-                    'borderWidth' => 2
+                    'label' => 'Ingresos Diarios ($)',
+                    'data' => $ventas->pluck('ingresos_diarios')->toArray(),
+                    'backgroundColor' => 'rgba(34, 197, 94, 0.1)',
+                    'borderColor' => 'rgba(34, 197, 94, 1)',
+                    'borderWidth' => 3,
+                    'fill' => true,
+                    'tension' => 0.4,
+                    'yAxisID' => 'y'
                 ],
                 [
-                    'label' => 'Transacciones',
-                    'data' => $ventas->pluck('transacciones')->toArray(),
-                    'backgroundColor' => 'rgba(255, 99, 132, 0.2)',
-                    'borderColor' => 'rgba(255, 99, 132, 1)',
+                    'label' => 'Número de Transacciones',
+                    'data' => $ventas->pluck('num_transacciones')->toArray(),
+                    'backgroundColor' => 'rgba(59, 130, 246, 0.1)',
+                    'borderColor' => 'rgba(59, 130, 246, 1)',
                     'borderWidth' => 2,
+                    'borderDash' => [5, 5],
+                    'fill' => false,
                     'yAxisID' => 'y1'
+                ],
+                [
+                    'label' => 'Ticket Promedio por Día ($)',
+                    'data' => $ventas->pluck('ticket_promedio_dia')->map(function($valor) {
+                        return round($valor, 2);
+                    })->toArray(),
+                    'backgroundColor' => 'rgba(168, 85, 247, 0.1)',
+                    'borderColor' => 'rgba(168, 85, 247, 1)',
+                    'borderWidth' => 2,
+                    'pointRadius' => 4,
+                    'fill' => false,
+                    'yAxisID' => 'y'
+                ]
+            ],
+            'chart_config' => [
+                'scales' => [
+                    'y' => ['title' => 'Ingresos ($)', 'position' => 'left'],
+                    'y1' => ['title' => 'Transacciones', 'position' => 'right', 'grid' => false]
                 ]
             ]
         ];
@@ -647,27 +680,58 @@ class ReporteVentasController extends Controller
 
     /**
      * Datos optimizados para gráfico de top productos
+     * Tipo de gráfico recomendado: Gráfico de barras horizontales (Horizontal Bar Chart)
+     * Propósito: Ranking de productos por desempeño de ventas y rentabilidad
      */
     private function getTopProductosChart($fechaInicio, $fechaFin)
     {
         $productos = Pedido::whereBetween('pedidos.fecha_creacion', [$fechaInicio, $fechaFin])
             ->join('pedido_items', 'pedidos.id_pedido', '=', 'pedido_items.pedidos_id_pedido')
             ->join('productos', 'pedido_items.productos_id_producto', '=', 'productos.id_producto')
-            ->selectRaw('productos.nombre, SUM(pedido_items.cantidad) as total_vendidos, SUM(pedido_items.cantidad * productos.precio) as ingresos')
+            ->selectRaw('
+                productos.nombre as producto_nombre, 
+                SUM(pedido_items.cantidad) as unidades_vendidas, 
+                SUM(pedido_items.cantidad * productos.precio) as ingresos_generados,
+                COUNT(DISTINCT pedidos.id_pedido) as pedidos_incluidos,
+                ROUND(AVG(pedido_items.cantidad), 1) as cantidad_promedio_por_pedido
+            ')
             ->groupBy('productos.id_producto', 'productos.nombre')
-            ->orderByDesc('total_vendidos')
+            ->orderByDesc('ingresos_generados')
             ->limit(10)
             ->get();
 
         return [
-            'labels' => $productos->pluck('nombre')->toArray(),
+            'chart_type' => 'horizontal_bar',
+            'title' => 'Top 10 Productos por Ingresos',
+            'description' => 'Ranking de productos más rentables del período',
+            'labels' => $productos->pluck('producto_nombre')->toArray(),
             'datasets' => [
                 [
-                    'label' => 'Unidades Vendidas',
-                    'data' => $productos->pluck('total_vendidos')->toArray(),
+                    'label' => 'Ingresos Generados ($)',
+                    'data' => $productos->pluck('ingresos_generados')->toArray(),
                     'backgroundColor' => [
-                        '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
-                        '#FF9F40', '#FF6384', '#C9CBCF', '#4BC0C0', '#FF6384'
+                        '#10B981', '#059669', '#047857', '#065F46', '#064E3B', // Verdes degradados
+                        '#3B82F6', '#2563EB', '#1D4ED8', '#1E40AF', '#1E3A8A'  // Azules degradados
+                    ],
+                    'borderColor' => '#374151',
+                    'borderWidth' => 1,
+                    'yAxisID' => 'y'
+                ]
+            ],
+            'additional_data' => [
+                'unidades_vendidas' => $productos->pluck('unidades_vendidas')->toArray(),
+                'pedidos_incluidos' => $productos->pluck('pedidos_incluidos')->toArray(),
+                'cantidad_promedio_por_pedido' => $productos->pluck('cantidad_promedio_por_pedido')->toArray()
+            ],
+            'chart_config' => [
+                'indexAxis' => 'y',
+                'responsive' => true,
+                'plugins' => [
+                    'legend' => ['display' => false],
+                    'tooltip' => [
+                        'callbacks' => [
+                            'afterLabel' => 'Mostrar unidades vendidas y pedidos'
+                        ]
                     ]
                 ]
             ]
@@ -676,25 +740,74 @@ class ReporteVentasController extends Controller
 
     /**
      * Datos optimizados para gráfico de estados de pedidos
+     * Tipo de gráfico recomendado: Gráfico de dona/donut (Doughnut Chart)
+     * Propósito: Distribución porcentual del estado operativo de pedidos
      */
     private function getEstadosPedidosChart($fechaInicio, $fechaFin)
     {
         $estados = Pedido::whereBetween('fecha_creacion', [$fechaInicio, $fechaFin])
-            ->selectRaw('estado, COUNT(*) as cantidad')
+            ->selectRaw('
+                estado as estado_pedido, 
+                COUNT(*) as cantidad_pedidos,
+                ROUND((COUNT(*) * 100.0 / (SELECT COUNT(*) FROM pedidos WHERE fecha_creacion BETWEEN ? AND ?)), 1) as porcentaje_del_total
+            ')
+            ->setBindings([$fechaInicio, $fechaFin, $fechaInicio, $fechaFin])
             ->groupBy('estado')
+            ->orderByDesc('cantidad_pedidos')
             ->get();
 
+        // Mapeo de estados a etiquetas más descriptivas
+        $estadosDescriptivos = [
+            'pendiente' => 'Pendientes de Procesar',
+            'en_proceso' => 'En Preparación',
+            'en_camino' => 'En Camino al Cliente',
+            'entregado' => 'Entregados Exitosamente',
+            'cancelado' => 'Cancelados',
+            'devuelto' => 'Devueltos'
+        ];
+
+        $labels = $estados->map(function($estado) use ($estadosDescriptivos) {
+            return $estadosDescriptivos[$estado->estado_pedido] ?? ucfirst($estado->estado_pedido);
+        })->toArray();
+
         return [
-            'labels' => $estados->pluck('estado')->toArray(),
+            'chart_type' => 'doughnut',
+            'title' => 'Distribución de Estados de Pedidos',
+            'description' => 'Análisis del flujo operativo y eficiencia de entrega',
+            'labels' => $labels,
             'datasets' => [
                 [
-                    'data' => $estados->pluck('cantidad')->toArray(),
+                    'label' => 'Pedidos por Estado',
+                    'data' => $estados->pluck('cantidad_pedidos')->toArray(),
                     'backgroundColor' => [
-                        '#28a745', // completado - verde
-                        '#ffc107', // pendiente - amarillo
-                        '#dc3545', // cancelado - rojo
-                        '#17a2b8', // en_proceso - azul
-                        '#6c757d'  // otros - gris
+                        '#FCD34D', // Pendiente - Amarillo
+                        '#60A5FA', // En proceso - Azul claro
+                        '#34D399', // En camino - Verde claro
+                        '#10B981', // Entregado - Verde
+                        '#F87171', // Cancelado - Rojo claro
+                        '#F59E0B'  // Devuelto - Naranja
+                    ],
+                    'borderColor' => '#FFFFFF',
+                    'borderWidth' => 2,
+                    'hoverOffset' => 4
+                ]
+            ],
+            'additional_data' => [
+                'porcentajes' => $estados->pluck('porcentaje_del_total')->toArray(),
+                'estados_originales' => $estados->pluck('estado_pedido')->toArray(),
+                'total_pedidos' => $estados->sum('cantidad_pedidos')
+            ],
+            'chart_config' => [
+                'cutout' => '60%',
+                'plugins' => [
+                    'legend' => [
+                        'position' => 'right',
+                        'labels' => ['usePointStyle' => true]
+                    ],
+                    'tooltip' => [
+                        'callbacks' => [
+                            'label' => 'Mostrar cantidad y porcentaje'
+                        ]
                     ]
                 ]
             ]
@@ -703,31 +816,82 @@ class ReporteVentasController extends Controller
 
     /**
      * Datos optimizados para gráfico de ventas mensuales
+     * Tipo de gráfico recomendado: Gráfico de área (Area Chart)
+     * Propósito: Tendencia de crecimiento y estacionalidad de ingresos por mes
      */
     private function getVentasMensualesChart($fechaInicio, $fechaFin)
     {
         $ventas = Pago::where('estado_pago', Pago::ESTADO_COMPLETADO)
             ->whereBetween('fecha_pago', [$fechaInicio, $fechaFin])
-            ->selectRaw('YEAR(fecha_pago) as año, MONTH(fecha_pago) as mes, SUM(monto_pago) as total')
+            ->selectRaw('
+                YEAR(fecha_pago) as año, 
+                MONTH(fecha_pago) as mes, 
+                SUM(monto_pago) as ingresos_mensuales,
+                COUNT(*) as transacciones_mes,
+                COUNT(DISTINCT DATE(fecha_pago)) as dias_con_ventas,
+                ROUND(AVG(monto_pago), 2) as ticket_promedio_mes
+            ')
             ->groupBy('año', 'mes')
             ->orderBy('año')
             ->orderBy('mes')
             ->get();
 
-        $labels = $ventas->map(function($venta) {
-            return $venta->año . '-' . str_pad($venta->mes, 2, '0', STR_PAD_LEFT);
+        // Formatear etiquetas de meses en español
+        $meses = [
+            1 => 'Enero', 2 => 'Febrero', 3 => 'Marzo', 4 => 'Abril',
+            5 => 'Mayo', 6 => 'Junio', 7 => 'Julio', 8 => 'Agosto',
+            9 => 'Septiembre', 10 => 'Octubre', 11 => 'Noviembre', 12 => 'Diciembre'
+        ];
+
+        $labels = $ventas->map(function($venta) use ($meses) {
+            return $meses[$venta->mes] . ' ' . $venta->año;
         });
 
         return [
+            'chart_type' => 'area',
+            'title' => 'Evolución de Ventas Mensuales',
+            'description' => 'Análisis de tendencias y estacionalidad de ingresos',
             'labels' => $labels->toArray(),
             'datasets' => [
                 [
-                    'label' => 'Ventas Mensuales',
-                    'data' => $ventas->pluck('total')->toArray(),
-                    'backgroundColor' => 'rgba(75, 192, 192, 0.2)',
-                    'borderColor' => 'rgba(75, 192, 192, 1)',
-                    'borderWidth' => 2,
-                    'fill' => true
+                    'label' => 'Ingresos Mensuales ($)',
+                    'data' => $ventas->pluck('ingresos_mensuales')->toArray(),
+                    'backgroundColor' => 'rgba(16, 185, 129, 0.3)',
+                    'borderColor' => 'rgba(16, 185, 129, 1)',
+                    'borderWidth' => 3,
+                    'fill' => true,
+                    'tension' => 0.4,
+                    'pointBackgroundColor' => 'rgba(16, 185, 129, 1)',
+                    'pointBorderColor' => '#FFFFFF',
+                    'pointBorderWidth' => 2,
+                    'pointRadius' => 5
+                ]
+            ],
+            'additional_data' => [
+                'transacciones_por_mes' => $ventas->pluck('transacciones_mes')->toArray(),
+                'dias_con_ventas' => $ventas->pluck('dias_con_ventas')->toArray(),
+                'ticket_promedio_mes' => $ventas->pluck('ticket_promedio_mes')->toArray(),
+                'años_meses' => $ventas->map(function($v) { return $v->año . '-' . str_pad($v->mes, 2, '0', STR_PAD_LEFT); })->toArray()
+            ],
+            'chart_config' => [
+                'scales' => [
+                    'x' => ['title' => 'Período'],
+                    'y' => ['title' => 'Ingresos ($)', 'beginAtZero' => true]
+                ],
+                'plugins' => [
+                    'legend' => ['display' => true, 'position' => 'top'],
+                    'tooltip' => [
+                        'mode' => 'index',
+                        'intersect' => false,
+                        'callbacks' => [
+                            'afterLabel' => 'Mostrar transacciones y días activos'
+                        ]
+                    ]
+                ],
+                'interaction' => [
+                    'mode' => 'nearest',
+                    'axis' => 'x',
+                    'intersect' => false
                 ]
             ]
         ];
