@@ -69,7 +69,7 @@ class Pedido extends Model
 
 	public function usuario()
 	{
-		return $this->belongsTo(User::class, 'usuarios_id_usuario');
+		return $this->belongsTo(User::class, 'usuarios_id_usuario', 'id_usuario');
 	}
 
 	public function envios()

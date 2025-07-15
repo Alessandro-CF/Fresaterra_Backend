@@ -260,10 +260,20 @@ Route::prefix('v1')->group(function () {
         });
 
         // Gestión de pedidos (admin)
-        Route::controller(PedidoController::class)->prefix('admin/orders')->group(function () {
+        Route::controller(\App\Http\Controllers\Api\V1\Admin\PedidoController::class)->prefix('admin/orders')->group(function () {
             Route::get('/', 'getAllOrders');                    // Todos los pedidos con filtros
             Route::get('/statistics', 'getOrderStatistics');    // Estadísticas de pedidos
+            Route::get('/client/{clientId}', 'getOrdersByClient'); // Pedidos por cliente específico
             // ¡NO definir aquí adminUpdateStatus, ya está en el grupo correcto abajo!
+        });
+
+        // Gestión de envíos (admin)
+        Route::controller(\App\Http\Controllers\Api\V1\Admin\EnviosController::class)->prefix('admin/shipments')->group(function () {
+            Route::get('/', 'index');                               // Listar todos los envíos
+            Route::get('/{id}', 'show');                           // Mostrar envío específico
+            Route::get('/order/{order_id}', 'getByOrder');         // Obtener envío por pedido
+            Route::patch('/{id}/status', 'updateStatus');          // Actualizar estado del envío
+            Route::patch('/order/{order_id}/sync', 'syncWithOrder'); // Sincronizar con pedido
         });
     });
 
