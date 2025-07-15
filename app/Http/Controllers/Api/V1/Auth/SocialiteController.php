@@ -63,6 +63,15 @@ class SocialiteController extends Controller
 
         try {
             Log::info("Attempting to get user from Socialite for provider: " . $provider);
+            
+            // Agregar más logging para debug
+            Log::info("Google OAuth Configuration:", [
+                'client_id' => config('services.google.client_id'),
+                'redirect_uri' => config('services.google.redirect'),
+                'request_url' => request()->fullUrl(),
+                'request_params' => request()->all()
+            ]);
+            
             $socialiteUser = Socialite::driver($provider)->user();
             Log::info("Socialite user obtained successfully", [
                 'id' => $socialiteUser->getId(),
@@ -72,9 +81,17 @@ class SocialiteController extends Controller
         } catch (\Exception $e) {
             Log::error('Socialite callback error: ' . $e->getMessage(), [
                 'provider' => $provider,
-                'trace' => $e->getTraceAsString()
+                'exception_class' => get_class($e),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+                'request_url' => request()->fullUrl(),
+                'request_params' => request()->all()
             ]);
-            return redirect(rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/') . '/login?error=social_auth_failed');
+            
+            // Usar las variables de entorno específicas para errores
+            $errorRedirectUrl = env('GOOGLE_ERROR_REDIRECT', rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/') . '/login');
+            return redirect($errorRedirectUrl . '?error=social_auth_failed&details=' . urlencode($e->getMessage()));
         }
 
         // Validate that we have the required user data
@@ -82,9 +99,11 @@ class SocialiteController extends Controller
             Log::error('Incomplete user data from social provider', [
                 'provider' => $provider,
                 'id' => $socialiteUser->getId(),
-                'email' => $socialiteUser->getEmail()
+                'email' => $socialiteUser->getEmail(),
+                'name' => $socialiteUser->getName()
             ]);
-            return redirect(rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/') . '/login?error=incomplete_user_data');
+            $errorRedirectUrl = env('GOOGLE_ERROR_REDIRECT', rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/') . '/login');
+            return redirect($errorRedirectUrl . '?error=incomplete_user_data');
         }
 
         try {
@@ -99,10 +118,12 @@ class SocialiteController extends Controller
             
             // Verificar si es error de cuenta desactivada
             if (str_contains($e->getMessage(), 'desactivada')) {
-                return redirect(rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/') . '/login?error=account_deactivated');
+                $errorRedirectUrl = env('GOOGLE_ERROR_REDIRECT', rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/') . '/login');
+                return redirect($errorRedirectUrl . '?error=account_deactivated');
             }
             
-            return redirect(rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/') . '/login?error=user_creation_failed');
+            $errorRedirectUrl = env('GOOGLE_ERROR_REDIRECT', rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/') . '/login');
+            return redirect($errorRedirectUrl . '?error=user_creation_failed&details=' . urlencode($e->getMessage()));
         }
 
         try {
@@ -114,12 +135,19 @@ class SocialiteController extends Controller
                 'user_id' => $user->id_usuario,
                 'trace' => $e->getTraceAsString()
             ]);
-            return redirect(rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/') . '/login?error=token_generation_failed');
+            $errorRedirectUrl = env('GOOGLE_ERROR_REDIRECT', rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/') . '/login');
+            return redirect($errorRedirectUrl . '?error=token_generation_failed');
         }
 
-        $frontendUrl = rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/');
-        $redirectUrl = $frontendUrl . '/auth/callback?token=' . $token;
-        Log::info("Redirecting to frontend", ['url' => $redirectUrl]);
+        // Usar la variable de entorno específica para redirección exitosa
+        $successRedirectUrl = env('GOOGLE_SUCCESS_REDIRECT', rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/') . '/auth/callback');
+        $redirectUrl = $successRedirectUrl . '?token=' . $token;
+        
+        Log::info("Redirecting to frontend", [
+            'success_redirect_url' => $successRedirectUrl,
+            'final_redirect_url' => $redirectUrl,
+            'user_id' => $user->id_usuario
+        ]);
         
         return redirect($redirectUrl);
     }
