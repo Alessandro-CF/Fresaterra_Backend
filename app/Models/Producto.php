@@ -64,7 +64,7 @@ class Producto extends Model
 		'categorias_id_categoria'
 	];
 
-    protected $appends = ['url_imagen_completa', 'imagen_url']; // Added from Product.php
+    protected $appends = ['url_imagen_completa', 'imagen_url', 'inventario_info', 'en_stock', 'cantidad_disponible']; // Added from Product.php
 
     // Don't hide timestamps anymore - we want to track them
     protected $hidden = [];
@@ -122,6 +122,40 @@ class Producto extends Model
 	public function getTotalReviewsAttribute(): int
 	{
 		return $this->comentarios()->count();
+	}
+
+	/**
+	 * Obtener información del inventario actual
+	 */
+	public function getInventarioInfoAttribute(): array
+	{
+		$inventario = $this->inventarios()->first();
+		
+		return [
+			'cantidad_disponible' => $inventario ? $inventario->cantidad_disponible : 0,
+			'estado_inventario' => $inventario ? $inventario->estado : 'agotado',
+			'fecha_ingreso' => $inventario ? $inventario->fecha_ingreso : null,
+			'ultima_actualizacion' => $inventario ? $inventario->ultima_actualizacion : null,
+			'en_stock' => $inventario ? ($inventario->cantidad_disponible > 0 && $inventario->estado === 'disponible') : false
+		];
+	}
+
+	/**
+	 * Verificar si el producto tiene stock disponible
+	 */
+	public function getEnStockAttribute(): bool
+	{
+		$inventario = $this->inventarios()->first();
+		return $inventario ? ($inventario->cantidad_disponible > 0 && $inventario->estado === 'disponible') : false;
+	}
+
+	/**
+	 * Obtener la cantidad disponible en inventario
+	 */
+	public function getCantidadDisponibleAttribute(): int
+	{
+		$inventario = $this->inventarios()->first();
+		return $inventario ? $inventario->cantidad_disponible : 0;
 	}
 
     // Accessor from Product.php

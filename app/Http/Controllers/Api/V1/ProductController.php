@@ -20,6 +20,7 @@ class ProductController extends Controller
     {
         $query = Producto::query()
             ->activos()
+            ->with(['inventarios']) // Incluir inventarios para acceso eficiente
             ->withAvg('comentarios', 'calificacion')
             ->withCount('comentarios');
 
@@ -49,7 +50,19 @@ class ProductController extends Controller
 
         // Filtro por productos con stock
         if ($request->has('solo_disponibles') && $request->solo_disponibles == 'true') {
-            $query->where('estado', 'activo');
+            $query->where('estado', 'activo')
+                  ->whereHas('inventarios', function($q) {
+                      $q->where('cantidad_disponible', '>', 0)
+                        ->where('estado', 'disponible');
+                  });
+        }
+
+        // Filtro adicional: solo productos en stock (alternativa más específica)
+        if ($request->has('en_stock') && $request->en_stock == 'true') {
+            $query->whereHas('inventarios', function($q) {
+                $q->where('cantidad_disponible', '>', 0)
+                  ->where('estado', 'disponible');
+            });
         }
 
         // Ordenamiento
@@ -95,6 +108,8 @@ class ProductController extends Controller
                 'precio_min' => $request->precio_min,
                 'precio_max' => $request->precio_max,
                 'rating_min' => $request->rating_min,
+                'solo_disponibles' => $request->solo_disponibles,
+                'en_stock' => $request->en_stock,
                 'ordenar' => $sortBy,
                 'direccion' => $sortOrder
             ]
@@ -106,7 +121,7 @@ class ProductController extends Controller
      */
     public function show(int $id): JsonResponse
     {
-        $producto = Producto::with(['categoria', 'comentarios'])
+        $producto = Producto::with(['categoria', 'comentarios', 'inventarios']) // Incluir inventarios
             ->withAvg('comentarios', 'calificacion')
             ->withCount('comentarios')
             ->find($id);
@@ -130,7 +145,9 @@ class ProductController extends Controller
      */
     public function featured(): JsonResponse
     {
-        $productos = Producto::destacados()->get();
+        $productos = Producto::destacados()
+            ->with(['inventarios']) // Incluir inventarios para acceso eficiente
+            ->get();
 
         if ($productos->isEmpty()) {
             return response()->json([
@@ -173,6 +190,7 @@ class ProductController extends Controller
     public function stats(): JsonResponse
     {
         $stats = Producto::activos()
+            ->with(['inventarios']) // Incluir inventarios para estadísticas de stock
             ->withAvg('comentarios', 'calificacion')
             ->withCount('comentarios')
             ->get();
@@ -208,6 +226,17 @@ class ProductController extends Controller
                 ];
             })->values();
 
+        // Calcular estadísticas de inventario
+        $productosEnStock = $stats->filter(function ($producto) {
+            return $producto->en_stock;
+        })->count();
+
+        $productosAgotados = $stats->filter(function ($producto) {
+            return !$producto->en_stock;
+        })->count();
+
+        $totalStock = $stats->sum('cantidad_disponible');
+
         return response()->json([
             'success' => true,
             'message' => 'Estadísticas recuperadas exitosamente',
@@ -222,6 +251,12 @@ class ProductController extends Controller
                     'min' => round($ratingMin, 1),
                     'max' => round($ratingMax, 1),
                     'promedio' => round($ratings->avg() ?? 0, 1)
+                ],
+                'inventario' => [
+                    'productos_en_stock' => $productosEnStock,
+                    'productos_agotados' => $productosAgotados,
+                    'total_stock_disponible' => $totalStock,
+                    'porcentaje_disponible' => $stats->count() > 0 ? round(($productosEnStock / $stats->count()) * 100, 1) : 0
                 ],
                 'productos_por_categoria' => $productosPorCategoria,
                 'productos_con_reviews' => $stats->where('comentarios_count', '>', 0)->count(),
