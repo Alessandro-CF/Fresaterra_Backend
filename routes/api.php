@@ -53,7 +53,9 @@ Route::prefix('v1')->group(function () {
     Route::get('products/search', [ProductController::class, 'search']);
     Route::get('products/featured', [ProductController::class, 'featured']);
     Route::get('products/stats', [ProductController::class, 'stats']);
-    Route::get('products/{id}', [ProductController::class, 'show']);
+    Route::post('products/check-stock', [ProductController::class, 'checkStock']); // Verificar stock para múltiples productos
+    Route::get('products/{id}/stock', [ProductController::class, 'getStockInfo']); // Información de stock específica - DEBE IR ANTES QUE {id}
+    Route::get('products/{id}', [ProductController::class, 'show']); // Ruta dinámica va al final
     Route::get('categories', [ProductController::class, 'categories']);
 
     // Reviews públicas

@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use App\Services\InventoryService;
 use Illuminate\Support\Str;
 
 class ProductController extends Controller
@@ -587,4 +588,78 @@ class ProductController extends Controller
         ]);
     }
 
+    /**
+     * Verificar disponibilidad de stock para productos
+     */
+    public function checkStock(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'items' => 'required|array',
+            'items.*.producto_id' => 'required|integer|exists:productos,id_producto',
+            'items.*.cantidad' => 'required|integer|min:1'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error de validación',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $inventoryService = app(InventoryService::class);
+            $items = [];
+            
+            foreach ($request->items as $item) {
+                $items[$item['producto_id']] = $item['cantidad'];
+            }
+
+            $stockCheck = $inventoryService->checkStockAvailability($items);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Verificación de stock completada',
+                'data' => $stockCheck
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error verificando stock',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Obtener información de stock para un producto específico
+     */
+    public function getStockInfo(int $id): JsonResponse
+    {
+        try {
+            $inventoryService = app(InventoryService::class);
+            $stockInfo = $inventoryService->getProductStockInfo($id);
+
+            if (!$stockInfo) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No se encontró información de inventario para este producto'
+                ], 404);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Información de stock recuperada exitosamente',
+                'data' => $stockInfo
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error obteniendo información de stock',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }

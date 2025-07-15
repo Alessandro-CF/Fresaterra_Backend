@@ -8,6 +8,7 @@ use App\Models\Pedido;
 use App\Models\MetodosPago;
 use App\Models\Envio;
 use App\Models\Direccion;
+use App\Services\InventoryService; // Agregar servicio de inventario
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Tymon\JWTAuth\Facades\JWTAuth;
@@ -17,6 +18,13 @@ use Illuminate\Support\Facades\DB;
 
 class PagosController extends Controller
 {
+    protected InventoryService $inventoryService;
+
+    public function __construct(InventoryService $inventoryService)
+    {
+        $this->inventoryService = $inventoryService;
+    }
+
     // 🔧 MÉTODOS HELPER PARA SNAPSHOTS
     
     /**
@@ -153,6 +161,9 @@ class PagosController extends Controller
                 // Si el pago es completado, actualizar el estado del pedido
                 if ($request->get('estado_pago') === Pago::ESTADO_COMPLETADO) {
                     $pedido->update(['estado' => Pedido::ESTADO_CONFIRMADO]);
+                    
+                    // Procesar reducción de stock automáticamente
+                    $this->inventoryService->processPaymentStockReduction($pago);
                 }
 
                 DB::commit();
@@ -319,6 +330,9 @@ class PagosController extends Controller
                 // Actualizar el estado del pedido según el estado del pago
                 if ($request->estado_pago === Pago::ESTADO_COMPLETADO) {
                     $pago->pedido->update(['estado' => 'pagado']);
+                    
+                    // Procesar reducción de stock automáticamente
+                    $this->inventoryService->processPaymentStockReduction($pago);
                 } elseif ($request->estado_pago === Pago::ESTADO_CANCELADO) {
                     $pago->pedido->update(['estado' => Pago::ESTADO_CANCELADO]);
                 }
@@ -420,6 +434,9 @@ class PagosController extends Controller
 
                     // Crear registro de envío automáticamente
                     $this->createShippingRecord($pedido);
+                    
+                    // Procesar reducción de stock automáticamente
+                    $this->inventoryService->processPaymentStockReduction($pago);
                     
                 } elseif ($estadoPago === Pago::ESTADO_CANCELADO) {
                     $pedido->update([
@@ -882,6 +899,9 @@ class PagosController extends Controller
                         $envio->update(['estado' => Pedido::ESTADO_CONFIRMADO]);
                     }
                     
+                    // Procesar reducción de stock automáticamente
+                    $this->inventoryService->processPaymentStockReduction($pago);
+                    
                 } elseif ($estadoPago === Pago::ESTADO_CANCELADO) {
                     $pedido->update(['estado' => Pago::ESTADO_CANCELADO]);
                     
@@ -1012,6 +1032,9 @@ class PagosController extends Controller
                     if ($envio) {
                         $envioUpdated = $envio->update(['estado' => Pedido::ESTADO_CONFIRMADO]);
                     }
+
+                    // Procesar reducción de stock automáticamente
+                    $this->inventoryService->processPaymentStockReduction($pago);
 
                     // Verificar que las actualizaciones se aplicaron
                     $pagoFresh = $pago->fresh();

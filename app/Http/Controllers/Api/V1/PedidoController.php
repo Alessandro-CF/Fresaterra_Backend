@@ -10,6 +10,7 @@ use App\Models\Direccion;
 use App\Models\Pago;
 use App\Models\MetodosPago;
 use App\Models\Envio;
+use App\Services\InventoryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Tymon\JWTAuth\Facades\JWTAuth;
@@ -19,6 +20,13 @@ use Illuminate\Support\Facades\DB;
 
 class PedidoController extends Controller
 {
+    protected InventoryService $inventoryService;
+
+    public function __construct(InventoryService $inventoryService)
+    {
+        $this->inventoryService = $inventoryService;
+    }
+
     // 🔧 MÉTODOS HELPER PARA SNAPSHOTS
     
     /**
@@ -483,6 +491,11 @@ class PedidoController extends Controller
                 Envio::where('pedidos_id_pedido', $pedidoId)
                     ->whereIn('estado', [Envio::ESTADO_PENDIENTE, Envio::ESTADO_CONFIRMADO])
                     ->update(['estado' => Envio::ESTADO_CANCELADO]);
+
+                // Restaurar stock si el pedido había sido pagado/confirmado
+                if (in_array($pedido->estado, [Pedido::ESTADO_CONFIRMADO, Pedido::ESTADO_PREPARANDO, Pedido::ESTADO_EN_CAMINO])) {
+                    $this->inventoryService->restoreStockForCancelledOrder($pedido);
+                }
 
                 DB::commit();
 
