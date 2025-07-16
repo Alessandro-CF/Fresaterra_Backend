@@ -13,6 +13,7 @@ return new class extends Migration
     {
         Schema::create('pedidos', function (Blueprint $table) {
             $table->id('id_pedido');
+            $table->string('codigo_pedido')->unique()->nullable(); // Código único del pedido formato FR-YYYYMMDD-XXX
             $table->decimal('monto_total', 10, 2);
             $table->string('estado');
             $table->timestamp('fecha_creacion')->useCurrent();

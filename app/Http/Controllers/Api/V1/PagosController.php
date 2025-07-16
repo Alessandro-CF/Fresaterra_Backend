@@ -556,9 +556,18 @@ class PagosController extends Controller
 
             $pagos = $query->orderBy('fecha_pago', 'desc')->get();
 
+            // Mapear pagos para incluir código del pedido
+            $pagosConCodigo = $pagos->map(function ($pago) {
+                $pagoArray = $pago->toArray();
+                if ($pago->pedido) {
+                    $pagoArray['codigo_pedido'] = $pago->pedido->codigo_pedido;
+                }
+                return $pagoArray;
+            });
+
             return response()->json([
                 'message' => 'Pagos obtenidos exitosamente',
-                'pagos' => $pagos,
+                'pagos' => $pagosConCodigo,
                 'total' => $pagos->count(),
                 'statistics' => [
                     'total_amount' => $pagos->where('estado_pago', Pago::ESTADO_COMPLETADO)->sum('monto_pago'),

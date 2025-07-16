@@ -86,10 +86,18 @@ class PedidoController extends Controller
         ]);
     }
 
-    // Mostrar un pedido específico por ID
+    // Mostrar un pedido específico por ID o código
     public function show($id)
     {
-        $pedido = \App\Models\Pedido::with(['usuario', 'envios', 'pagos', 'pedido_items'])->findOrFail($id);
+        // Buscar por ID numérico o por código de pedido
+        if (is_numeric($id)) {
+            $pedido = \App\Models\Pedido::with(['usuario', 'envios', 'pagos', 'pedido_items'])->findOrFail($id);
+        } else {
+            $pedido = \App\Models\Pedido::with(['usuario', 'envios', 'pagos', 'pedido_items'])
+                ->where('codigo_pedido', $id)
+                ->firstOrFail();
+        }
+        
         return response()->json($pedido);
     }
     

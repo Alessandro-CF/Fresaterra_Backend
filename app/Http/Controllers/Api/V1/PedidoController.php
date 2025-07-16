@@ -34,10 +34,22 @@ class PedidoController extends Controller
      */
     private function createProductSnapshot(Producto $producto): array
     {
+        // Construir URL completa de imagen
+        $imagenUrl = null;
+        if ($producto->url_imagen) {
+            // Si la URL ya es completa (empieza con http), usarla tal como está
+            if (str_starts_with($producto->url_imagen, 'http')) {
+                $imagenUrl = $producto->url_imagen;
+            } else {
+                // Si es una ruta relativa, construir URL completa
+                $imagenUrl = asset('storage/' . ltrim($producto->url_imagen, '/'));
+            }
+        }
+        
         return [
             'producto_nombre_snapshot' => $producto->nombre,
             'producto_descripcion_snapshot' => $producto->descripcion,
-            'producto_imagen_snapshot' => $producto->url_imagen,
+            'producto_imagen_snapshot' => $imagenUrl,
             'producto_peso_snapshot' => $producto->peso,
             'categoria_nombre_snapshot' => $producto->categoria ? $producto->categoria->nombre : null
         ];
@@ -124,6 +136,7 @@ class PedidoController extends Controller
             $pedidosMapped = $pedidos->map(function($pedido) {
                 return [
                     'id_pedido' => $pedido->id_pedido,
+                    'codigo_pedido' => $pedido->codigo_pedido,
                     'nombre_usuario' => $pedido->usuario->nombre ?? null,
                     'estado' => $pedido->estado,
                     'monto_total' => $pedido->monto_total,
@@ -387,8 +400,17 @@ class PedidoController extends Controller
                 return response()->json([
                     'error' => 'Usuario no autenticado'
                 ], 401);
-            }            $pedido = Pedido::with(['pedido_items.producto', 'pagos.metodos_pago', 'envios.direccion', 'envios.transportista', 'usuario'])
-                           ->where('id_pedido', $pedidoId)
+            }            // Buscar pedido por ID numérico o por código de pedido
+            $pedido = Pedido::with(['pedido_items.producto', 'pagos.metodos_pago', 'envios.direccion', 'envios.transportista', 'usuario'])
+                           ->where(function($query) use ($pedidoId, $user) {
+                               // Si es un número, buscar por id_pedido
+                               if (is_numeric($pedidoId)) {
+                                   $query->where('id_pedido', $pedidoId);
+                               } else {
+                                   // Si no es numérico, buscar por codigo_pedido
+                                   $query->where('codigo_pedido', $pedidoId);
+                               }
+                           })
                            ->where('usuarios_id_usuario', $user->id_usuario)
                            ->first();
 

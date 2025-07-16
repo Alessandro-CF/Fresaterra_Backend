@@ -54,6 +54,48 @@ class Pedido extends Model
 		];
 	}
 
+	/**
+	 * Generar código único para el pedido
+	 * Formato: FR-YYYYMMDD-XXX
+	 */
+	public static function generateCodigoPedido()
+	{
+		$fecha = now()->format('Ymd'); // YYYYMMDD
+		$prefijo = "FR-{$fecha}-";
+		
+		// Buscar el último pedido del día
+		$ultimoPedido = self::where('codigo_pedido', 'LIKE', $prefijo . '%')
+			->orderBy('codigo_pedido', 'desc')
+			->first();
+		
+		$secuencial = 1;
+		if ($ultimoPedido) {
+			// Extraer el número secuencial del último código
+			$ultimoCodigo = $ultimoPedido->codigo_pedido;
+			$ultimoSecuencial = (int) substr($ultimoCodigo, -3);
+			$secuencial = $ultimoSecuencial + 1;
+		}
+		
+		// Formatear con ceros a la izquierda (3 dígitos)
+		$secuencialFormateado = str_pad($secuencial, 3, '0', STR_PAD_LEFT);
+		
+		return $prefijo . $secuencialFormateado;
+	}
+
+	/**
+	 * Boot method para generar código automáticamente
+	 */
+	protected static function boot()
+	{
+		parent::boot();
+		
+		static::creating(function ($pedido) {
+			if (empty($pedido->codigo_pedido)) {
+				$pedido->codigo_pedido = self::generateCodigoPedido();
+			}
+		});
+	}
+
 	protected $casts = [
 		'monto_total' => 'float',
 		'fecha_creacion' => 'datetime',
@@ -61,6 +103,7 @@ class Pedido extends Model
 	];
 
 	protected $fillable = [
+		'codigo_pedido',
 		'monto_total',
 		'estado',
 		'fecha_creacion',
